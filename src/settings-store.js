@@ -11,14 +11,21 @@ export const DEFAULT_SETTINGS = Object.freeze({
     openai: { model: "gpt-5.5", reasoningEffort: "low", baseURL: "https://api.openai.com/v1" },
     codex: { model: "gpt-5.5-fast", baseURL: "https://chatgpt.com/backend-api/codex" },
     ollama: { model: "", baseURL: "http://localhost:11434/v1" },
+    openrouter: { model: "x-ai/grok-4.20", baseURL: "https://openrouter.ai/api/v1" },
   },
   transcription: {
     provider: "moonshine",
     moonshine: { model: "medium" },
     openai: { model: "gpt-realtime-whisper" },
+    // `keyterms` biases nova-3 toward words its language model has never seen -
+    // product names, jargon, people in the room. Empty by default; the staging
+    // board's own text is merged in on top of whatever is set here.
+    deepgram: { model: "nova-3", keyterms: [] },
   },
   apiKeys: {
     openai: "",
+    deepgram: "",
+    openrouter: "",
   },
   agentInstructions: "",
 });
@@ -69,9 +76,13 @@ export function createSettingsStore({ filePath, env = process.env, readCodexAuth
   async function getSanitized() {
     const settings = await load();
     const { apiKeys, ...rest } = settings;
+    // Keys are exposed as booleans only. The browser is told whether a key is
+    // configured, never what it is.
     return {
       ...rest,
       hasOpenAIKey: Boolean(apiKeys?.openai),
+      hasDeepgramKey: Boolean(apiKeys?.deepgram),
+      hasOpenRouterKey: Boolean(apiKeys?.openrouter),
     };
   }
 
@@ -125,12 +136,33 @@ function seedFromEnv(settings, env, readCodexAuth) {
   const ollamaBaseURL = trimOrEmpty(env.OLLAMA_BASE_URL);
   if (ollamaBaseURL) next.agent.ollama.baseURL = ollamaBaseURL;
 
+  const deepgramKey = trimOrEmpty(env.DEEPGRAM_API_KEY);
+  if (deepgramKey) next.apiKeys.deepgram = deepgramKey;
+
+  const deepgramModel = trimOrEmpty(env.DEEPGRAM_MODEL);
+  if (deepgramModel) next.transcription.deepgram.model = deepgramModel;
+
+  const openrouterKey = trimOrEmpty(env.OPENROUTER_API_KEY);
+  if (openrouterKey) next.apiKeys.openrouter = openrouterKey;
+
+  const openrouterModel = trimOrEmpty(env.OPENROUTER_MODEL);
+  if (openrouterModel) next.agent.openrouter.model = openrouterModel;
+
+  const openrouterBaseURL = trimOrEmpty(env.OPENROUTER_BASE_URL);
+  if (openrouterBaseURL) next.agent.openrouter.baseURL = openrouterBaseURL;
+
   const codexAuth = safeReadCodexAuth(readCodexAuth, env);
-  if (codexAuth) next.agent.provider = "codex";
+  // An explicit OpenRouter key is a deliberate choice of a non-OpenAI agent, so
+  // it outranks a Codex login that happens to be lying around.
+  if (openrouterKey) next.agent.provider = "openrouter";
+  else if (codexAuth) next.agent.provider = "codex";
   else if (ollamaModel) next.agent.provider = "ollama";
   else next.agent.provider = "openai";
 
-  if (openaiKey) next.transcription.provider = "openai";
+  // Deepgram outranks OpenAI for speech: a box with both keys set has gone out
+  // of its way to configure the dedicated STT vendor.
+  if (deepgramKey) next.transcription.provider = "deepgram";
+  else if (openaiKey) next.transcription.provider = "openai";
 
   return next;
 }

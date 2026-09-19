@@ -15,6 +15,7 @@ import {
   defaultWhiteboardAgentProvider,
   resolveAgentProviderFromSettings,
 } from "./agent-provider.js";
+import { createDeepgramTranscription as createDefaultDeepgramTranscription } from "./deepgram-transcription.js";
 import { createMoonshineTranscription as createDefaultMoonshineTranscription } from "./moonshine-transcription.js";
 import { createOpenAITranscription as createDefaultOpenAITranscription } from "./openai-transcription.js";
 import { isAllowedRequest } from "./request-guard.js";
@@ -254,6 +255,16 @@ export async function startServer(options) {
   };
 }
 
+/**
+ * Transcription provider name -> its factory. Moonshine is the fallback for an
+ * unset or unrecognised name because it is the one engine that needs no key.
+ */
+export function transcriptionFactoryFor(provider) {
+  if (provider === "openai") return createDefaultOpenAITranscription;
+  if (provider === "deepgram") return createDefaultDeepgramTranscription;
+  return createDefaultMoonshineTranscription;
+}
+
 async function createTranscriptionManager({ options, wss, queueTranscript, state }) {
   let current = null;
   let label = "";
@@ -271,23 +282,33 @@ async function createTranscriptionManager({ options, wss, queueTranscript, state
       ...options,
       moonshineModel: settings.transcription.moonshine.model,
       openaiTranscriptionModel: settings.transcription.openai.model,
-      env: { ...(options.env ?? process.env), OPENAI_API_KEY: settings.apiKeys?.openai || (options.env ?? process.env).OPENAI_API_KEY },
+      deepgramModel: settings.transcription.deepgram?.model,
+      deepgramKeyterms: settings.transcription.deepgram?.keyterms,
+      env: {
+        ...(options.env ?? process.env),
+        OPENAI_API_KEY: settings.apiKeys?.openai || (options.env ?? process.env).OPENAI_API_KEY,
+        // Deepgram gets its own key so the STT vendor and the agent vendor can
+        // be different accounts.
+        DEEPGRAM_API_KEY: settings.apiKeys?.deepgram || (options.env ?? process.env).DEEPGRAM_API_KEY,
+      },
     };
   }
 
   function pickFactory(settings) {
     if (options.createTranscription) return options.createTranscription;
-    const provider = settings ? settings.transcription.provider : options.transcriptionProvider;
-    if (provider === "openai") return createDefaultOpenAITranscription;
-    return createDefaultMoonshineTranscription;
+    return transcriptionFactoryFor(
+      settings ? settings.transcription.provider : options.transcriptionProvider,
+    );
   }
 
   function describeLabel(settings) {
     if (settings) {
       if (settings.transcription.provider === "openai") return `OpenAI ${settings.transcription.openai.model}`;
+      if (settings.transcription.provider === "deepgram") return `Deepgram ${settings.transcription.deepgram?.model ?? ""}`.trim();
       return `Moonshine ${settings.transcription.moonshine.model}`;
     }
     if (options.transcriptionProvider === "openai") return `OpenAI ${options.openaiTranscriptionModel}`;
+    if (options.transcriptionProvider === "deepgram") return `Deepgram ${options.deepgramModel ?? ""}`.trim();
     return `Moonshine ${options.moonshineModel}`;
   }
 
@@ -297,7 +318,9 @@ async function createTranscriptionManager({ options, wss, queueTranscript, state
     activeProvider = settings ? settings.transcription.provider : (options.transcriptionProvider ?? "moonshine");
     activeModel = activeProvider === "openai"
       ? (settings?.transcription.openai.model ?? options.openaiTranscriptionModel ?? null)
-      : (settings?.transcription.moonshine.model ?? options.moonshineModel ?? null);
+      : activeProvider === "deepgram"
+        ? (settings?.transcription.deepgram?.model ?? options.deepgramModel ?? null)
+        : (settings?.transcription.moonshine.model ?? options.moonshineModel ?? null);
 
     if (current && newLabel === label) return;
 

@@ -153,3 +153,25 @@ test("createSessionCostTracker remembers the last seen model and provider", () =
   assert.equal(summary.transcription.provider, "openai");
   assert.equal(summary.transcription.model, "whisper-1");
 });
+
+test("Deepgram audio is priced per minute, and an unknown Deepgram model is not", () => {
+  const priced = computeTranscriptionCost({ provider: "deepgram", model: "nova-3", seconds: 120 });
+  assert.equal(priced.priced, true);
+  assert.ok(Math.abs(priced.cost - 2 * 0.0077) < 1e-9);
+
+  const unknown = computeTranscriptionCost({ provider: "deepgram", model: "nova-9", seconds: 120 });
+  assert.equal(unknown.priced, false);
+  assert.equal(unknown.reason, "unknown");
+  assert.equal(unknown.cost, 0);
+});
+
+test("OpenRouter agent usage is reported unpriced rather than at a guessed rate", () => {
+  const result = computeAgentCost({
+    provider: "openrouter",
+    model: "x-ai/grok-4.20",
+    usage: { input: 1000, output: 500 },
+  });
+  assert.equal(result.priced, false);
+  assert.equal(result.reason, "unpriced");
+  assert.equal(result.cost, 0);
+});

@@ -142,3 +142,57 @@ test("resolveAgentProviderFromSettings throws when Codex auth is unavailable", (
     /Codex CLI auth/,
   );
 });
+
+test("resolveAgentProviderFromSettings returns an OpenRouter provider with its own key", () => {
+  const settings = settingsBase();
+  settings.agent.provider = "openrouter";
+  settings.agent.openrouter = { model: "x-ai/grok-4.20", baseURL: "https://openrouter.ai/api/v1/" };
+  settings.apiKeys.openrouter = "sk-or-from-settings";
+  // An OpenAI key lying around must not be spent on OpenRouter.
+  settings.apiKeys.openai = "sk-openai";
+
+  assert.deepEqual(resolveAgentProviderFromSettings({ settings, env: {} }), {
+    provider: "openrouter",
+    model: "x-ai/grok-4.20",
+    apiKey: "sk-or-from-settings",
+    baseURL: "https://openrouter.ai/api/v1",
+  });
+});
+
+test("the OpenRouter provider carries no reasoningEffort", () => {
+  const settings = settingsBase();
+  settings.agent.provider = "openrouter";
+  settings.agent.openrouter = { model: "x-ai/grok-4.20", baseURL: "https://openrouter.ai/api/v1" };
+  settings.agent.openai.reasoningEffort = "xhigh";
+  settings.apiKeys.openrouter = "sk-or";
+
+  const resolved = resolveAgentProviderFromSettings({ settings, env: {} });
+  // reasoningEffort is an OpenAI-only provider option; forwarding it to an
+  // arbitrary OpenRouter model is at best ignored and at worst a 400.
+  assert.equal("reasoningEffort" in resolved, false);
+});
+
+test("resolveAgentProviderFromSettings falls back to OPENROUTER_API_KEY from env", () => {
+  const settings = settingsBase();
+  settings.agent.provider = "openrouter";
+  settings.agent.openrouter = { model: "", baseURL: "" };
+
+  const resolved = resolveAgentProviderFromSettings({
+    settings,
+    env: { OPENROUTER_API_KEY: "sk-or-env" },
+  });
+  assert.equal(resolved.apiKey, "sk-or-env");
+  assert.equal(resolved.model, "x-ai/grok-4.20", "an empty model falls back to the default");
+  assert.equal(resolved.baseURL, "https://openrouter.ai/api/v1");
+});
+
+test("resolveAgentProviderFromSettings refuses OpenRouter without a key", () => {
+  const settings = settingsBase();
+  settings.agent.provider = "openrouter";
+  settings.agent.openrouter = { model: "x-ai/grok-4.20", baseURL: "https://openrouter.ai/api/v1" };
+
+  assert.throws(
+    () => resolveAgentProviderFromSettings({ settings, env: {} }),
+    /OpenRouter API key is not configured/,
+  );
+});

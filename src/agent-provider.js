@@ -9,6 +9,13 @@ const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1";
 const OPENAI_REASONING_EFFORTS = new Set(["none", "low", "medium", "high", "xhigh"]);
 
+// OpenRouter fronts many vendors behind an OpenAI-shaped API, including the
+// `/responses` endpoint this app's OpenAI path already speaks, so the whole
+// provider is a base URL, a key and a model id. Grok is the default because it
+// answers a tool-call turn quickly; any OpenRouter model id works.
+export const DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+export const DEFAULT_OPENROUTER_AGENT_MODEL = "x-ai/grok-4.20";
+
 export function defaultWhiteboardAgentProvider(options = {}) {
   return {
     provider: "openai",
@@ -30,6 +37,26 @@ export function resolveAgentProviderFromSettings({ settings, env = process.env }
       model,
       baseURL: withoutTrailingSlash(settings.agent.ollama.baseURL ?? DEFAULT_OLLAMA_BASE_URL),
       apiKey: "ollama",
+    };
+  }
+
+  if (provider === "openrouter") {
+    const apiKey =
+      (settings.agent?.openrouter?.apiKey ?? "").trim() ||
+      (settings.apiKeys?.openrouter ?? "").trim() ||
+      cleanEnvValue(env.OPENROUTER_API_KEY);
+    if (!apiKey) throw new Error("OpenRouter API key is not configured. Add it in the agent settings.");
+    // Deliberately no `reasoningEffort`: it is an OpenAI-specific provider
+    // option, most OpenRouter models reject or ignore it, and
+    // createWhiteboardAgentProviderOptions already declines to send provider
+    // options for anything that is not openai/codex.
+    return {
+      provider: "openrouter",
+      model: (settings.agent?.openrouter?.model ?? "").trim() || DEFAULT_OPENROUTER_AGENT_MODEL,
+      apiKey,
+      baseURL: withoutTrailingSlash(
+        cleanEnvValue(settings.agent?.openrouter?.baseURL) ?? DEFAULT_OPENROUTER_BASE_URL,
+      ),
     };
   }
 
@@ -73,6 +100,18 @@ export function createWhiteboardAgentModel(agentProvider) {
       apiKey: agentProvider.apiKey,
     });
     return ollama.chat(agentProvider.model);
+  }
+
+  if (agentProvider.provider === "openrouter") {
+    const openrouter = createOpenAI({
+      name: "openrouter",
+      baseURL: agentProvider.baseURL,
+      apiKey: agentProvider.apiKey,
+    });
+    // `.responses()` rather than `.chat()`: OpenRouter implements the Responses
+    // API, and it is the same shape the OpenAI path sends, so tool calls and
+    // message reshaping behave identically.
+    return openrouter.responses(agentProvider.model);
   }
 
   if (agentProvider.provider === "codex") {

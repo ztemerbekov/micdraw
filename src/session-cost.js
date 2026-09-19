@@ -26,11 +26,23 @@ export const TRANSCRIPTION_PRICING = {
     "gpt-4o-mini-transcribe": 0.003,
     "whisper-1":              0.006,
   },
+  // Deepgram streaming, pay-as-you-go list price. A model that is not in this
+  // table reports "n/a" rather than a made-up number.
+  deepgram: {
+    "nova-3":         0.0077,
+    "nova-3-general": 0.0077,
+    "nova-2":         0.0059,
+  },
 };
 
 export function computeAgentCost({ provider, model, usage }) {
   if (provider === "ollama") return { priced: false, cost: 0, reason: "local" };
   if (provider === "codex") return { priced: false, cost: 0, reason: "subscription" };
+  // OpenRouter fronts hundreds of models whose rates move independently of this
+  // file, so there is no rate card here that would stay true. Report the token
+  // volume - which is measured, not guessed - and leave the dollars to
+  // openrouter.ai/activity rather than printing a confidently wrong number.
+  if (provider === "openrouter") return { priced: false, cost: 0, reason: "unpriced" };
   const rates = AGENT_PRICING[provider]?.[model];
   if (!rates) return { priced: false, cost: 0, reason: "unknown" };
   const input = Number(usage?.input) || 0;
