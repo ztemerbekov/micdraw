@@ -17,7 +17,7 @@ Guidance for coding agents in this repo. The README owns user-facing behavior, C
 - The warmup loop exists for prompt-cache priming: every attempt sends identical prefix bytes, then `agentHistory` becomes `[warmup_user_msg, assistant("UNDERSTOOD")]`, and Agent instructions are snapshotted per preso. Do not change this pattern without understanding the cache implications (see comments near `WARMUP_USER_MESSAGE` in `src/server.js`).
 - The agent edits a line-numbered text view of the scene, not Excalidraw JSON. When changing the edit contract, update the tool schema in `src/server.js`, the applier in `src/whiteboard-tools.js`, and add a test in `test/whiteboard-tools.test.js`.
 - The system prompt is P1-P10 cross-cutting principles plus short per-genre stubs. Do not append verbose "When the talk is X..." paragraphs. Prompt experiments use `scripts/simulate-whiteboard-agent.md`.
-- Settings (`src/settings-store.js`): always use `getSanitized()` for outbound payloads so API keys never reach the frontend. Env vars only seed `~/.config/autopreso/settings.json` on first run.
+- Settings (`src/settings-store.js`): always use `getSanitized()` for outbound payloads so API keys never reach the frontend. Env vars only seed `~/.config/micdraw/settings.json` on first run.
 
 ## Testing
 
@@ -27,6 +27,7 @@ Guidance for coding agents in this repo. The README owns user-facing behavior, C
 ## Releases
 
 - There is no release automation yet: nothing publishes to npm. Do not add a release or publish workflow without discussing it first.
+- Local Moonshine transcription uses the upstream autopreso sidecar builds (`@autopreso/moonshine-darwin-*`, binary `autopreso-moonshine`). Keep those names until this project publishes its own sidecars.
 
 ## README
 

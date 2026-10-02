@@ -1,16 +1,16 @@
 {
-  "name": "autopreso",
+  "name": "micdraw",
   "version": "0.1.8",
-  "description": "Realtime speech to presentation. Let the whiteboard whiteboard itself.",
+  "description": "Speak, and a live Excalidraw whiteboard draws your talk in real time.",
   "license": "MIT",
-  "author": "Kun Chen <kun@kunchenguid.com>",
-  "homepage": "https://github.com/kunchenguid/autopreso#readme",
+  "author": "micdraw contributors",
+  "homepage": "https://github.com/ztemerbekov/micdraw#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kunchenguid/autopreso.git"
+    "url": "git+https://github.com/ztemerbekov/micdraw.git"
   },
   "bugs": {
-    "url": "https://github.com/kunchenguid/autopreso/issues"
+    "url": "https://github.com/ztemerbekov/micdraw/issues"
   },
   "keywords": [
     "excalidraw",
@@ -29,7 +29,7 @@
   },
   "type": "module",
   "bin": {
-    "autopreso": "src/cli.js"
+    "micdraw": "src/cli.js"
   },
   "files": [
     "assets/",

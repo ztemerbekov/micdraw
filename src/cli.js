@@ -8,7 +8,7 @@ import { parseCliArgs } from "./cli-options.js";
 import { startServer } from "./server.js";
 import { createSettingsStore } from "./settings-store.js";
 
-const SETTINGS_PATH = path.join(os.homedir(), ".config", "autopreso", "settings.json");
+const SETTINGS_PATH = path.join(os.homedir(), ".config", "micdraw", "settings.json");
 
 async function main() {
   let options;
@@ -16,7 +16,7 @@ async function main() {
     options = parseCliArgs(process.argv.slice(2));
   } catch (error) {
     console.error(error.message);
-    console.error("Run `autopreso --help` for usage.");
+    console.error("Run `micdraw --help` for usage.");
     process.exitCode = 1;
     return;
   }
@@ -53,7 +53,7 @@ async function main() {
     onStatus: (message) => console.log(message),
   });
 
-  console.log(`autopreso listening at ${url}`);
+  console.log(`micdraw listening at ${url}`);
 
   if (options.openBrowser) {
     await open(url);
@@ -61,10 +61,10 @@ async function main() {
 }
 
 function printHelp() {
-  console.log(`autopreso
+  console.log(`micdraw
 
 Usage:
-  autopreso [options]
+  micdraw [options]
 
 Options:
   --no-open                Do not open the browser automatically
@@ -83,8 +83,8 @@ Environment:
   CODEX_BASE_URL           Seeds the Codex backend URL on first run
   OLLAMA_MODEL             Seeds the Ollama model on first run
   OLLAMA_BASE_URL          Seeds the Ollama base URL on first run
-  AUTOPRESO_CACHE_LOG      Cache usage log path. Default: ~/.config/autopreso/logs/cache.log
-  AUTOPRESO_DEBUG_LOG      Agent debug log path. Default: ~/.config/autopreso/logs/debug.log
+  MICDRAW_CACHE_LOG        Cache usage log path. Default: ~/.config/micdraw/logs/cache.log
+  MICDRAW_DEBUG_LOG        Agent debug log path. Default: ~/.config/micdraw/logs/debug.log
 
 Models and providers are configured in the UI after launch. Settings persist at:
   ${SETTINGS_PATH}

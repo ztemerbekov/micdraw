@@ -23,7 +23,7 @@ function buildTarget(target) {
     throw new Error("Moonshine sidecar release binaries must be built on macOS.");
   }
 
-  const buildRoot = path.join(rootDir, ".autopreso-dev", "release-build", target.name);
+  const buildRoot = path.join(rootDir, ".micdraw-dev", "release-build", target.name);
   const venvDir = path.join(buildRoot, "venv");
   const binDir = path.join(rootDir, target.packageDir, "bin");
   const outputPath = path.join(binDir, "autopreso-moonshine");

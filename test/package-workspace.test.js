@@ -13,7 +13,7 @@ test("root package keeps platform sidecars as optional published packages, not l
   const rootPackage = readJson("package.json");
 
   assert.deepEqual(rootPackage.files, ["assets/", "LICENSE", "public/", "src/"]);
-  assert.equal(rootPackage.bin["autopreso"], "src/cli.js");
+  assert.equal(rootPackage.bin["micdraw"], "src/cli.js");
   assert.equal(rootPackage.scripts.dev, "node ./src/cli.js");
   assert.equal(rootPackage.scripts["build:moonshine-sidecars"], "node ./scripts/build-moonshine-sidecars.js");
   assert.equal(rootPackage.workspaces, undefined);
@@ -21,7 +21,7 @@ test("root package keeps platform sidecars as optional published packages, not l
   assert.ok(rootPackage.optionalDependencies["@autopreso/moonshine-darwin-x64"]);
 });
 
-test("Moonshine sidecar packages share one version, decoupled from autopreso", () => {
+test("Moonshine sidecar packages share one version, decoupled from the micdraw CLI version", () => {
   const armPackage = readJson("packages/moonshine-darwin-arm64/package.json");
   const x64Package = readJson("packages/moonshine-darwin-x64/package.json");
   const rootPackage = readJson("package.json");

@@ -3,7 +3,7 @@ node_modules/
 .claude/scheduled_tasks.lock
 
 # Local Moonshine development environment
-.autopreso-dev/
+.micdraw-dev/
 
 # Generated release sidecar binaries
 packages/*/bin/

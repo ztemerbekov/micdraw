@@ -23,7 +23,7 @@ export function resolveMoonshineSidecarPath({
   arch = process.arch,
   requireResolve = require.resolve,
 } = {}) {
-  if (env.AUTOPRESO_MOONSHINE_BIN) return env.AUTOPRESO_MOONSHINE_BIN;
+  if (env.MICDRAW_MOONSHINE_BIN) return env.MICDRAW_MOONSHINE_BIN;
 
   const packageName = moonshinePlatformPackageName(platform, arch);
   const packageJsonPath = requireResolve(`${packageName}/package.json`);

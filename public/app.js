@@ -19,8 +19,8 @@ const OPENAI_TRANSCRIPTION_MODELS = [
   "whisper-1",
 ];
 const MOONSHINE_MODELS = ["tiny", "small", "medium"];
-const MIC_STORAGE_KEY = "autopreso.mic";
-const PANEL_HIDDEN_STORAGE_KEY = "autopreso.panelHidden";
+const MIC_STORAGE_KEY = "micdraw.mic";
+const PANEL_HIDDEN_STORAGE_KEY = "micdraw.panelHidden";
 
 const STARTER_STAGING_ELEMENTS = [];
 
@@ -729,7 +729,7 @@ function App() {
         React.createElement(
           "div",
           { className: "brand-row" },
-          React.createElement("h1", null, "Auto Preso"),
+          React.createElement("h1", null, "micdraw"),
           React.createElement(
             "div",
             {

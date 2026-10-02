@@ -7,7 +7,7 @@ import { test } from "node:test";
 import { createSettingsStore, DEFAULT_SETTINGS, MAX_AGENT_INSTRUCTIONS_CHARS } from "../src/settings-store.js";
 
 async function tempPath() {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "autopreso-settings-"));
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "micdraw-settings-"));
   return path.join(dir, "settings.json");
 }
 

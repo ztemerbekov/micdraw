@@ -33,7 +33,7 @@ test("resolveMoonshineSidecarPath resolves the binary inside the optional packag
 
 test("resolveMoonshineSidecarPath prefers an explicit binary override", () => {
   const resolved = resolveMoonshineSidecarPath({
-    env: { AUTOPRESO_MOONSHINE_BIN: "/tmp/dev/autopreso-moonshine" },
+    env: { MICDRAW_MOONSHINE_BIN: "/tmp/dev/autopreso-moonshine" },
     platform: "linux",
     arch: "x64",
     requireResolve: () => {
