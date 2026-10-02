@@ -67,6 +67,17 @@ test("browser renders the app shell", async (t) => {
   // Page starts in staging: Start Preso + Reset staging.
   assert.ok(controls.some((label) => label.includes("Start Preso")), `expected a Start Preso button, got ${JSON.stringify(controls)}`);
   assert.ok(controls.some((label) => label.includes("Reset Staging")), `expected a Reset Staging button, got ${JSON.stringify(controls)}`);
+
+  // The page's own origin has to pass the request guard for the app WebSocket.
+  const webSocketState = await evaluateInTab(
+    tab.webSocketDebuggerUrl,
+    `new Promise((resolve) => {
+      const socket = new WebSocket(\`ws://\${location.host}/ws\`);
+      socket.onopen = () => { socket.close(); resolve("open"); };
+      socket.onerror = () => resolve("error");
+    })`,
+  );
+  assert.equal(webSocketState, "open");
 });
 
 async function waitForChromeTab(url) {
@@ -176,7 +187,7 @@ async function evaluateInTab(webSocketDebuggerUrl, expression) {
       ws.once("open", resolve);
       ws.once("error", reject);
     });
-    const response = await request("Runtime.evaluate", { expression, returnByValue: true });
+    const response = await request("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
     return response.result?.result?.value;
   } finally {
     ws.close();
