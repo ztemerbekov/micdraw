@@ -60,6 +60,7 @@ export function createSettingsStore({ filePath, env = process.env, readCodexAuth
   async function save(partial) {
     if (!cached) await load();
     validateAgentInstructions(partial?.agentInstructions);
+    validateBaseURLs(partial);
     cached = deepMerge(cached, partial);
     await writeToDisk(cached);
     return cached;
@@ -81,10 +82,14 @@ function cloneDefaults() {
   return JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
 }
 
+// Keys that would replace an object's prototype instead of setting a field.
+const UNSAFE_MERGE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
 function deepMerge(target, source) {
   if (!source || typeof source !== "object") return target;
   const result = Array.isArray(target) ? [...target] : { ...target };
   for (const [key, value] of Object.entries(source)) {
+    if (UNSAFE_MERGE_KEYS.has(key)) continue;
     if (value && typeof value === "object" && !Array.isArray(value)) {
       result[key] = deepMerge(result[key] ?? {}, value);
     } else if (value !== undefined) {
@@ -146,5 +151,27 @@ function trimOrEmpty(value) {
 export function validateAgentInstructions(value) {
   if (typeof value === "string" && value.length > MAX_AGENT_INSTRUCTIONS_CHARS) {
     throw new Error(`Agent instructions must be ${MAX_AGENT_INSTRUCTIONS_CHARS} characters or fewer.`);
+  }
+}
+
+// An empty base URL means "use the provider default".
+function validateBaseURLs(partial) {
+  for (const provider of ["openai", "codex", "ollama"]) {
+    const value = partial?.agent?.[provider]?.baseURL;
+    if (value === undefined || value === null) continue;
+    if (typeof value !== "string" || !isHttpUrlOrEmpty(value)) {
+      throw new Error(`The ${provider} base URL must start with http:// or https://.`);
+    }
+  }
+}
+
+function isHttpUrlOrEmpty(value) {
+  const trimmed = value.trim();
+  if (!trimmed) return true;
+  try {
+    const { protocol } = new URL(trimmed);
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
   }
 }

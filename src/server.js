@@ -17,6 +17,7 @@ import {
 } from "./agent-provider.js";
 import { createMoonshineTranscription as createDefaultMoonshineTranscription } from "./moonshine-transcription.js";
 import { createOpenAITranscription as createDefaultOpenAITranscription } from "./openai-transcription.js";
+import { isAllowedRequest } from "./request-guard.js";
 import { audioSecondsFromBase64Pcm16 } from "./session-cost.js";
 import { validateAgentInstructions } from "./settings-store.js";
 import { broadcast, createWhiteboardSession } from "./whiteboard-session.js";
@@ -27,14 +28,25 @@ import { applyWhiteboardEditOperations, formatLineNumberedWhiteboard } from "./w
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, "..", "public");
 export const DEFAULT_AGENT_TIMEOUT_MS = 90_000;
+// The largest messages the page sends are viewport screenshots, downscaled PNGs.
+export const MAX_WS_PAYLOAD_BYTES = 10 * 1024 * 1024;
 
 export async function startServer(options) {
   const app = express();
+  app.use((req, res, next) => {
+    if (isAllowedRequest({ host: req.headers.host, origin: req.headers.origin })) return next();
+    res.status(403).json({ error: "Forbidden" });
+  });
   app.use(express.json({ limit: "1mb" }));
   app.use(express.static(PUBLIC_DIR));
 
   const httpServer = createHttpServer(app);
-  const wss = new WebSocketServer({ server: httpServer, path: "/ws" });
+  const wss = new WebSocketServer({
+    server: httpServer,
+    path: "/ws",
+    maxPayload: MAX_WS_PAYLOAD_BYTES,
+    verifyClient: (info, done) => done(isAllowedRequest({ host: info.req.headers.host, origin: info.origin }), 403, "Forbidden"),
+  });
   const state = createWhiteboardSession({
     options,
     wss,
@@ -155,6 +167,9 @@ export async function startServer(options) {
   httpServer.on("close", () => transcription.close());
 
   wss.on("connection", async (client) => {
+    // ws closes the connection itself on protocol errors such as an oversized
+    // message; without a listener the error event would crash the process.
+    client.on("error", (error) => console.warn(`[micdraw] websocket error: ${error.message}`));
     let activeAudioSessionId = null;
     client.send(JSON.stringify({ type: "config", transcriptionEngine: transcription.getLabel() }));
     if (options.settingsStore) {

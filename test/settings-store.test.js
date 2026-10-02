@@ -162,3 +162,48 @@ test("createSettingsStore preserves previously-saved values across reloads, igno
   assert.equal(settings.agent.openai.model, "gpt-5-mini");
   assert.equal(settings.apiKeys.openai, "sk-original");
 });
+
+test("createSettingsStore.save ignores keys that would change an object's prototype", async () => {
+  const filePath = await tempPath();
+  const store = createSettingsStore({ filePath, env: {}, readCodexAuth: noCodexAuth });
+  await store.save(JSON.parse('{"__proto__":{"injected":true},"agent":{"constructor":{"prototype":{"injected":true}}}}'));
+
+  const settings = await store.load();
+  assert.equal(Object.getPrototypeOf(settings), Object.prototype);
+  assert.equal(settings.injected, undefined);
+  assert.equal(Object.hasOwn(settings.agent, "constructor"), false);
+
+  const onDisk = JSON.parse(await fs.readFile(filePath, "utf8"));
+  assert.equal(Object.hasOwn(onDisk.agent, "constructor"), false);
+});
+
+test("createSettingsStore.save rejects base URLs that are not http or https", async () => {
+  const store = createSettingsStore({ filePath: await tempPath(), env: {}, readCodexAuth: noCodexAuth });
+
+  for (const baseURL of ["file:///etc/hosts", "ftp://example.test/v1", "not a url", 42]) {
+    await assert.rejects(store.save({ agent: { openai: { baseURL } } }), /base URL/);
+  }
+  await assert.rejects(store.save({ agent: { codex: { baseURL: "file:///tmp/codex" } } }), /base URL/);
+  await assert.rejects(store.save({ agent: { ollama: { baseURL: "file:///tmp/ollama" } } }), /base URL/);
+
+  const settings = await store.load();
+  assert.equal(settings.agent.openai.baseURL, DEFAULT_SETTINGS.agent.openai.baseURL);
+  assert.equal(settings.agent.codex.baseURL, DEFAULT_SETTINGS.agent.codex.baseURL);
+  assert.equal(settings.agent.ollama.baseURL, DEFAULT_SETTINGS.agent.ollama.baseURL);
+});
+
+test("createSettingsStore.save accepts http, https and empty base URLs", async () => {
+  const store = createSettingsStore({ filePath: await tempPath(), env: {}, readCodexAuth: noCodexAuth });
+
+  await store.save({
+    agent: {
+      openai: { baseURL: "https://gateway.example.test/v1" },
+      ollama: { baseURL: "http://192.168.1.20:11434/v1" },
+    },
+  });
+  await store.save({ agent: { openai: { baseURL: "" } } });
+
+  const settings = await store.load();
+  assert.equal(settings.agent.openai.baseURL, "");
+  assert.equal(settings.agent.ollama.baseURL, "http://192.168.1.20:11434/v1");
+});
