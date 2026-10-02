@@ -44,8 +44,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ai-sdk/openai": "^3.0.63",
-    "ai": "^6.0.176",
+    "@ai-sdk/openai": "^4.0.81",
+    "ai": "^7.0.122",
     "express": "^5.2.1",
     "open": "^11.0.0",
     "ws": "^8.22.0",
@@ -57,8 +57,8 @@
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
-    "@types/node": "^25.6.2",
+    "@types/node": "^26.6.3",
     "@types/ws": "^8.18.1",
-    "typescript": "^6.0.3"
+    "typescript": "^7.0.2"
   }
 }
