@@ -185,11 +185,13 @@ test("createSettingsStore.save rejects base URLs that are not http or https", as
   }
   await assert.rejects(store.save({ agent: { codex: { baseURL: "file:///tmp/codex" } } }), /base URL/);
   await assert.rejects(store.save({ agent: { ollama: { baseURL: "file:///tmp/ollama" } } }), /base URL/);
+  await assert.rejects(store.save({ agent: { openrouter: { baseURL: "file:///tmp/openrouter" } } }), /base URL/);
 
   const settings = await store.load();
   assert.equal(settings.agent.openai.baseURL, DEFAULT_SETTINGS.agent.openai.baseURL);
   assert.equal(settings.agent.codex.baseURL, DEFAULT_SETTINGS.agent.codex.baseURL);
   assert.equal(settings.agent.ollama.baseURL, DEFAULT_SETTINGS.agent.ollama.baseURL);
+  assert.equal(settings.agent.openrouter.baseURL, DEFAULT_SETTINGS.agent.openrouter.baseURL);
 });
 
 test("createSettingsStore.save accepts http, https and empty base URLs", async () => {

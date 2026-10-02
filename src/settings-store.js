@@ -188,7 +188,7 @@ export function validateAgentInstructions(value) {
 
 // An empty base URL means "use the provider default".
 function validateBaseURLs(partial) {
-  for (const provider of ["openai", "codex", "ollama"]) {
+  for (const provider of ["openai", "codex", "ollama", "openrouter"]) {
     const value = partial?.agent?.[provider]?.baseURL;
     if (value === undefined || value === null) continue;
     if (typeof value !== "string" || !isHttpUrlOrEmpty(value)) {
