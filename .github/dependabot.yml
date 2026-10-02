@@ -4,9 +4,11 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    # Major versions arrive as separate pull requests: a new major of the AI SDK
+    # changes how the agent talks to models, and the tests stub those calls.
     groups:
       npm:
-        patterns: ["*"]
+        update-types: ["minor", "patch"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
