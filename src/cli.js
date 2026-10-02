@@ -53,7 +53,7 @@ async function main() {
     onStatus: (message) => console.log(message),
   });
 
-  console.log(`micdraw listening at ${url}`);
+  console.log(`Mic Draw listening at ${url}`);
 
   if (options.openBrowser) {
     await open(url);
@@ -61,7 +61,7 @@ async function main() {
 }
 
 function printHelp() {
-  console.log(`micdraw
+  console.log(`Mic Draw
 
 Usage:
   micdraw [options]

@@ -729,7 +729,7 @@ function App() {
         React.createElement(
           "div",
           { className: "brand-row" },
-          React.createElement("h1", null, "micdraw"),
+          React.createElement("h1", null, "Mic Draw"),
           React.createElement(
             "div",
             {

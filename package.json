@@ -3,7 +3,7 @@
   "version": "0.1.8",
   "description": "Speak, and a live Excalidraw whiteboard draws your talk in real time.",
   "license": "MIT",
-  "author": "micdraw contributors",
+  "author": "Mic Draw contributors",
   "homepage": "https://github.com/ztemerbekov/micdraw#readme",
   "repository": {
     "type": "git",
@@ -32,7 +32,6 @@
     "micdraw": "src/cli.js"
   },
   "files": [
-    "assets/",
     "LICENSE",
     "public/",
     "src/"

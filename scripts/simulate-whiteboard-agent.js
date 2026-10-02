@@ -322,7 +322,7 @@ function printStructuredError(message, help) {
 
 function printHelp() {
   console.log(`bin: ${__filename.replace(process.env.HOME ?? "", "~")}
-description: Simulate the micdraw whiteboard agent with Codex non-fast mode and capture trajectory artifacts.
+description: Simulate the Mic Draw whiteboard agent with Codex non-fast mode and capture trajectory artifacts.
 usage: node scripts/simulate-whiteboard-agent.js --transcript <path> --out <dir> [options]
 options[6|]{flag,default,description}:
   --transcript||Full transcript text file

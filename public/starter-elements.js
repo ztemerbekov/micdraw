@@ -6,7 +6,7 @@ export const STARTER_ELEMENTS = [
     y: 68,
     width: 320,
     height: 34,
-    text: "micdraw",
+    text: "Mic Draw",
     fontSize: 28,
     fontFamily: 1,
     strokeColor: "#1e1e1e",

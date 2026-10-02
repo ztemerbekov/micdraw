@@ -1,16 +1,16 @@
 {
-  "name": "@autopreso/moonshine-darwin-arm64",
+  "name": "@micdraw/moonshine-darwin-arm64",
   "version": "0.1.1",
-  "description": "Moonshine transcription sidecar for AutoPreso on macOS arm64.",
+  "description": "Moonshine transcription sidecar for Mic Draw on macOS arm64.",
   "license": "MIT",
-  "homepage": "https://github.com/kunchenguid/autopreso#readme",
+  "homepage": "https://github.com/ztemerbekov/micdraw#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kunchenguid/autopreso.git",
+    "url": "git+https://github.com/ztemerbekov/micdraw.git",
     "directory": "packages/moonshine-darwin-arm64"
   },
   "bugs": {
-    "url": "https://github.com/kunchenguid/autopreso/issues"
+    "url": "https://github.com/ztemerbekov/micdraw/issues"
   },
   "os": [
     "darwin"
@@ -19,10 +19,10 @@
     "arm64"
   ],
   "files": [
-    "bin/autopreso-moonshine"
+    "bin/micdraw-moonshine"
   ],
   "bin": {
-    "autopreso-moonshine": "bin/autopreso-moonshine"
+    "micdraw-moonshine": "bin/micdraw-moonshine"
   },
   "publishConfig": {
     "access": "public"

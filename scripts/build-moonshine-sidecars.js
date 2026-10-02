@@ -26,7 +26,7 @@ function buildTarget(target) {
   const buildRoot = path.join(rootDir, ".micdraw-dev", "release-build", target.name);
   const venvDir = path.join(buildRoot, "venv");
   const binDir = path.join(rootDir, target.packageDir, "bin");
-  const outputPath = path.join(binDir, "autopreso-moonshine");
+  const outputPath = path.join(binDir, "micdraw-moonshine");
   const archPrefix = target.arch === "x64" ? ["arch", "-x86_64"] : [];
   const python = process.env.PYTHON || "python3";
 
@@ -60,7 +60,7 @@ function buildTarget(target) {
     "--clean",
     "--noconfirm",
     "--name",
-    "autopreso-moonshine",
+    "micdraw-moonshine",
     "--hidden-import",
     "moonshine_voice.transcriber",
     "--add-binary",

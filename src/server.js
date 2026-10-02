@@ -956,7 +956,7 @@ function formatCurrentCanvasTask(elements, latestScreenshot) {
 }
 
 export function whiteboardSystemPrompt() {
-  return `You are micdraw, a real-time visual note-taking agent.
+  return `You are Mic Draw, a real-time visual note-taking agent.
 
 You listen to transcript chunks and maintain a visual presentation that complements the speaker.
 The transcript may contain slight inaccuracies, especially for names, product terms, and short phrases.

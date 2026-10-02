@@ -2,6 +2,10 @@
 
 Guidance for coding agents in this repo. The README owns user-facing behavior, CONTRIBUTING.md owns the contribution workflow, and source comments own implementation detail.
 
+## Naming
+
+- The display name is **Mic Draw**: the UI, page title, starter canvas, agent persona, README prose and license holder. Anything people type or code parses uses **micdraw**: the npm package and command, the repository, `~/.config/micdraw`, `MICDRAW_*` env vars, storage keys and log tags.
+
 ## Commands and CI
 
 - Scripts live in `package.json`: `npm run dev`, `npm run typecheck`, `npm test`. Run one file with `node --test test/<file>.test.js`, filter with `--test-name-pattern`.
@@ -27,7 +31,7 @@ Guidance for coding agents in this repo. The README owns user-facing behavior, C
 ## Releases
 
 - There is no release automation yet: nothing publishes to npm. Do not add a release or publish workflow without discussing it first.
-- Local Moonshine transcription uses the upstream autopreso sidecar builds (`@autopreso/moonshine-darwin-*`, binary `autopreso-moonshine`). Keep those names until this project publishes its own sidecars.
+- Local Moonshine installs the upstream autopreso sidecar builds (`@autopreso/moonshine-darwin-*`, binary `autopreso-moonshine`, see `src/moonshine-transcription.js`). `packages/` holds micdraw's own sidecar packages (`@micdraw/moonshine-darwin-*`), which are not published yet; switch the resolver and `optionalDependencies` to them once they are.
 
 ## README
 

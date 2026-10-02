@@ -1,4 +1,4 @@
-<h1 align="center">micdraw</h1>
+<h1 align="center">Mic Draw</h1>
 
 <p align="center">
   <a href="https://github.com/ztemerbekov/micdraw/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/ztemerbekov/micdraw/actions/workflows/ci.yml/badge.svg" /></a>
@@ -8,21 +8,21 @@
 <h3 align="center">You talk. The whiteboard draws.</h3>
 
 > [!WARNING]
-> micdraw is in **alpha** and under active development. Expect rough edges, breaking changes, and the occasional weird drawing. Bug reports welcome.
+> Mic Draw is in **alpha** and under active development. Expect rough edges, breaking changes, and the occasional weird drawing. Bug reports welcome.
 
-micdraw runs a local web app with a live Excalidraw canvas and a listening agent.
+Mic Draw runs a local web app with a live Excalidraw canvas and a listening agent.
 You speak; transcripts stream to a model; the model draws, labels, and rearranges the whiteboard in real time.
 Stage a few seed elements, hit start, and present.
 
 - **Hands free** - your speech drives an agent that edits an Excalidraw scene as you talk, no clicking required.
-- **Bring your own model** - use your OpenAI API key or Codex subscription. micdraw itself is free and open source.
+- **Bring your own model** - use your OpenAI API key or Codex subscription. Mic Draw itself is free and open source.
 - **Can run locally** - use Moonshine for transcription and Ollama for the agent and you get a fully local setup.
 
-micdraw is based on [autopreso](https://github.com/kunchenguid/autopreso) by Kun Chen.
+Mic Draw is based on [autopreso](https://github.com/kunchenguid/autopreso) by Kun Chen.
 
 ## Quick Start
 
-micdraw is not published to npm yet. Run it from source:
+Mic Draw is not on npm yet. Run it from source:
 
 ```sh
 git clone https://github.com/ztemerbekov/micdraw.git
@@ -85,7 +85,7 @@ OpenAI prices use the built-in May 2026 rate table; local providers show `$0.000
 
 ### Defaults on first run
 
-When no settings file exists, micdraw picks providers based on what it finds in your environment:
+When no settings file exists, Mic Draw picks providers based on what it finds in your environment:
 
 | You have...                                | Agent provider                 | Transcription              |
 | ------------------------------------------ | ------------------------------ | -------------------------- |
@@ -116,7 +116,7 @@ Local Moonshine transcription ships as an optional native sidecar for `darwin-ar
 
 ## Credits
 
-- [autopreso](https://github.com/kunchenguid/autopreso) by Kun Chen - the project micdraw started from.
+- [autopreso](https://github.com/kunchenguid/autopreso) by Kun Chen - the project Mic Draw started from.
 - [Excalidraw](https://github.com/excalidraw/excalidraw) - the whiteboard canvas, scene model, and rendering.
 - [Moonshine](https://github.com/moonshine-ai/moonshine) - the local speech-to-text model that makes the offline path possible.
 - [Vercel AI SDK](https://github.com/vercel/ai) - tool-calling agent loop and provider abstraction.

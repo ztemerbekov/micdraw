@@ -12,41 +12,37 @@ function readJson(relativePath) {
 test("root package keeps platform sidecars as optional published packages, not local workspaces", () => {
   const rootPackage = readJson("package.json");
 
-  assert.deepEqual(rootPackage.files, ["assets/", "LICENSE", "public/", "src/"]);
+  assert.deepEqual(rootPackage.files, ["LICENSE", "public/", "src/"]);
   assert.equal(rootPackage.bin["micdraw"], "src/cli.js");
   assert.equal(rootPackage.scripts.dev, "node ./src/cli.js");
   assert.equal(rootPackage.scripts["build:moonshine-sidecars"], "node ./scripts/build-moonshine-sidecars.js");
   assert.equal(rootPackage.workspaces, undefined);
+
+  // Until micdraw publishes its own sidecars, the root package installs the
+  // upstream autopreso builds.
   assert.ok(rootPackage.optionalDependencies["@autopreso/moonshine-darwin-arm64"]);
   assert.ok(rootPackage.optionalDependencies["@autopreso/moonshine-darwin-x64"]);
 });
 
-test("Moonshine sidecar packages share one version, decoupled from the micdraw CLI version", () => {
+test("Moonshine sidecar packages share one version", () => {
   const armPackage = readJson("packages/moonshine-darwin-arm64/package.json");
   const x64Package = readJson("packages/moonshine-darwin-x64/package.json");
-  const rootPackage = readJson("package.json");
 
   // Both sidecar packages must always agree on their version, since they ship
   // the same binary contract for two architectures.
   assert.equal(armPackage.version, x64Package.version);
-
-  // Root optionalDependencies must pin the exact sidecar version that's
-  // checked into the sidecar package.jsons, otherwise `npm ci` (and the
-  // resolver in src/moonshine-transcription.js) sees a version mismatch.
-  assert.equal(rootPackage.optionalDependencies["@autopreso/moonshine-darwin-arm64"], armPackage.version);
-  assert.equal(rootPackage.optionalDependencies["@autopreso/moonshine-darwin-x64"], x64Package.version);
 });
 
-test("Moonshine sidecar packages expose the resolver binary contract", () => {
+test("micdraw sidecar packages declare their platform and binary", () => {
   const packages = [
     {
       dir: "packages/moonshine-darwin-arm64",
-      name: "@autopreso/moonshine-darwin-arm64",
+      name: "@micdraw/moonshine-darwin-arm64",
       cpu: "arm64",
     },
     {
       dir: "packages/moonshine-darwin-x64",
-      name: "@autopreso/moonshine-darwin-x64",
+      name: "@micdraw/moonshine-darwin-x64",
       cpu: "x64",
     },
   ];
@@ -57,8 +53,8 @@ test("Moonshine sidecar packages expose the resolver binary contract", () => {
     assert.equal(packageJson.name, sidecarPackage.name);
     assert.deepEqual(packageJson.os, ["darwin"]);
     assert.deepEqual(packageJson.cpu, [sidecarPackage.cpu]);
-    assert.deepEqual(packageJson.files, ["bin/autopreso-moonshine"]);
-    assert.equal(packageJson.bin["autopreso-moonshine"], "bin/autopreso-moonshine");
+    assert.deepEqual(packageJson.files, ["bin/micdraw-moonshine"]);
+    assert.equal(packageJson.bin["micdraw-moonshine"], "bin/micdraw-moonshine");
   }
 });
 
