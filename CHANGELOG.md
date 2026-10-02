@@ -1,5 +1,7 @@
 # Changelog
 
+Versions up to 0.1.8 are autopreso releases, from before the project was renamed to micdraw. Their links point to the upstream repository.
+
 ## [0.1.8](https://github.com/kunchenguid/autopreso/compare/autopreso-v0.1.7...autopreso-v0.1.8) (2026-07-23)
 
 
