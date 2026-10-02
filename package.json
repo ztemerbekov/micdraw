@@ -40,7 +40,6 @@
   "scripts": {
     "build:moonshine-sidecars": "node ./scripts/build-moonshine-sidecars.js",
     "dev": "node ./src/cli.js",
-    "prepare:release-packages": "node ./scripts/prepare-release-packages.js",
     "test": "node --test",
     "start": "node ./src/cli.js",
     "typecheck": "tsc --noEmit"

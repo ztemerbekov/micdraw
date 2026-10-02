@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Guidance for coding agents in this repo. The README owns user-facing behavior, CONTRIBUTING.md owns workflow and release details, and source comments own implementation detail.
+Guidance for coding agents in this repo. The README owns user-facing behavior, CONTRIBUTING.md owns the contribution workflow, and source comments own implementation detail.
 
 ## Commands and CI
 
@@ -26,9 +26,7 @@ Guidance for coding agents in this repo. The README owns user-facing behavior, C
 
 ## Releases
 
-- release-please manifest mode with two components, `autopreso` and `moonshine-sidecars`; see CONTRIBUTING.md "Releases" for which paths bump which.
-- Never hand-edit `CHANGELOG.md` or `.release-please-manifest.json`.
-- Do not reintroduce a PR-time lockfile sync workflow; `test/release-ci-exclusions.test.js` guards the release-PR `paths-ignore` set.
+- There is no release automation yet: nothing publishes to npm. Do not add a release or publish workflow without discussing it first.
 
 ## README
 
