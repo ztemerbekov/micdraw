@@ -33,7 +33,7 @@ test("resolveMoonshineSidecarPath resolves the binary inside the optional packag
 
 test("resolveMoonshineSidecarPath prefers an explicit binary override", () => {
   const resolved = resolveMoonshineSidecarPath({
-    env: { AUTOPRESO_MOONSHINE_BIN: "/tmp/dev/autopreso-moonshine" },
+    env: { MICDRAW_MOONSHINE_BIN: "/tmp/dev/micdraw-moonshine" },
     platform: "linux",
     arch: "x64",
     requireResolve: () => {
@@ -41,7 +41,7 @@ test("resolveMoonshineSidecarPath prefers an explicit binary override", () => {
     },
   });
 
-  assert.equal(resolved, "/tmp/dev/autopreso-moonshine");
+  assert.equal(resolved, "/tmp/dev/micdraw-moonshine");
 });
 
 test("createMoonshineTranscription maps sidecar transcript events and sends audio JSONL", () => {
@@ -64,11 +64,11 @@ test("createMoonshineTranscription maps sidecar transcript events and sends audi
     queueTranscript: (text) => queued.push(text),
     options: { moonshineModel: "medium" },
     spawnProcess: (binary, args) => {
-      assert.equal(binary, "/tmp/autopreso-moonshine");
+      assert.equal(binary, "/tmp/micdraw-moonshine");
       assert.deepEqual(args, ["--model", "medium", "--language", "en"]);
       return child;
     },
-    resolveSidecarPath: () => "/tmp/autopreso-moonshine",
+    resolveSidecarPath: () => "/tmp/micdraw-moonshine",
   });
 
   transcription.sendAudio("abc123");
@@ -102,7 +102,7 @@ test("createMoonshineTranscription can prewarm the sidecar before audio arrives"
     queueTranscript: () => {},
     options: { moonshineModel: "medium" },
     spawnProcess: () => child,
-    resolveSidecarPath: () => "/tmp/autopreso-moonshine",
+    resolveSidecarPath: () => "/tmp/micdraw-moonshine",
   });
 
   let ready = false;
@@ -136,7 +136,7 @@ test("createMoonshineTranscription keeps the warmed process alive when recording
     queueTranscript: () => {},
     options: { moonshineModel: "medium" },
     spawnProcess: () => child,
-    resolveSidecarPath: () => "/tmp/autopreso-moonshine",
+    resolveSidecarPath: () => "/tmp/micdraw-moonshine",
   });
 
   transcription.sendAudio("abc123");

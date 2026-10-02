@@ -36,7 +36,7 @@ test("browser renders the app shell", async (t) => {
     httpServer.close();
   });
 
-  const userDataDir = await mkdtemp(path.join(tmpdir(), "autopreso-chrome-"));
+  const userDataDir = await mkdtemp(path.join(tmpdir(), "micdraw-chrome-"));
   const chrome = spawn(
     CHROME_BIN,
     [

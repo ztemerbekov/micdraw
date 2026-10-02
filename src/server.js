@@ -96,7 +96,7 @@ export async function startServer(options) {
     const agentInstructions = typeof settings?.agentInstructions === "string" ? settings.agentInstructions : "";
     const primerMessage = buildStagingPrimerMessage({ stagingElements, stagingScreenshot });
     const keywords = extractWhiteboardKeywords(stagingElements);
-    console.log(`[autopreso] preso/start: ${keywords.length} staging keyword(s) for transcription bias`);
+    console.log(`[micdraw] preso/start: ${keywords.length} staging keyword(s) for transcription bias`);
     transcription.setSessionContext({ keywords });
     state.startPreso({ primerMessage, agentInstructions });
     state.startWarmupLoop({
@@ -673,9 +673,9 @@ function summarizeAgentResult(result) {
   );
 }
 
-const DEFAULT_LOG_DIR = path.join(os.homedir(), ".config", "autopreso", "logs");
-const CACHE_USAGE_LOG_PATH = process.env.AUTOPRESO_CACHE_LOG ?? path.join(DEFAULT_LOG_DIR, "cache.log");
-const DEBUG_LOG_PATH = process.env.AUTOPRESO_DEBUG_LOG ?? path.join(DEFAULT_LOG_DIR, "debug.log");
+const DEFAULT_LOG_DIR = path.join(os.homedir(), ".config", "micdraw", "logs");
+const CACHE_USAGE_LOG_PATH = process.env.MICDRAW_CACHE_LOG ?? path.join(DEFAULT_LOG_DIR, "cache.log");
+const DEBUG_LOG_PATH = process.env.MICDRAW_DEBUG_LOG ?? path.join(DEFAULT_LOG_DIR, "debug.log");
 
 let logDirsEnsured = false;
 function ensureLogDirs() {
@@ -956,7 +956,7 @@ function formatCurrentCanvasTask(elements, latestScreenshot) {
 }
 
 export function whiteboardSystemPrompt() {
-  return `You are AutoPreso, a real-time visual note-taking agent.
+  return `You are Mic Draw, a real-time visual note-taking agent.
 
 You listen to transcript chunks and maintain a visual presentation that complements the speaker.
 The transcript may contain slight inaccuracies, especially for names, product terms, and short phrases.

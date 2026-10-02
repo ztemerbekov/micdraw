@@ -204,7 +204,7 @@ test("runWhiteboardAgent rejects with a timeout instead of hanging forever", asy
 test("runWhiteboardAgent exposes whiteboard_apply that combines edits and viewport in one call", async () => {
   const broadcasts = [];
   const state = {
-    elements: [{ type: "text", id: "title", x: 72, y: 68, text: "AutoPreso" }],
+    elements: [{ type: "text", id: "title", x: 72, y: 68, text: "Mic Draw" }],
     agentHistory: [],
   };
 
@@ -245,7 +245,7 @@ test("runWhiteboardAgent exposes whiteboard_apply that combines edits and viewpo
   });
 
   assert.deepEqual(state.elements, [
-    { type: "text", id: "title", x: 72, y: 68, text: "AutoPreso" },
+    { type: "text", id: "title", x: 72, y: 68, text: "Mic Draw" },
     { type: "rectangle", id: "voice", x: 80, y: 140, width: 220, height: 80 },
   ]);
   assert.deepEqual(
