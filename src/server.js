@@ -536,7 +536,7 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
   const agentCallOptions = {
     model: createWhiteboardAgentModel(agentProvider),
     providerOptions: createWhiteboardAgentProviderOptions(agentProvider, effectiveSystem),
-    stopWhen: stepCountIs(4),
+    stopWhen: [stepCountIs(4), editLandedCleanly],
     system: effectiveSystem,
     messages,
     tools: {
@@ -648,6 +648,16 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
     });
   }
   return result;
+}
+
+// Ends a turn once an edit lands with nothing left to fix. Another request
+// would only buy the model's closing "DONE" while the next phrase waits in the
+// queue. A layout warning or a failed edit still gets a follow-up step.
+function editLandedCleanly({ steps }) {
+  const last = steps.at(-1);
+  if (!last || last.toolResults.length === 0) return false;
+  if (last.content.some((part) => part.type === "tool-error")) return false;
+  return last.toolResults.every((result) => typeof result.output === "string" && !result.output.includes("WARNING"));
 }
 
 // Returned to the model when a tool is called after the user has ended the
