@@ -1,9 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 (2026-10-03)
+
+The first release as Mic Draw.
 
 - Renamed the project to Mic Draw (npm package and command: `micdraw`).
-- Removed the inherited release-please and no-mistakes automation.
+- Replaced the inherited release-please and no-mistakes automation: publishing a GitHub Release now publishes the package to npm.
 - Local multilingual transcription: the new default `local` provider streams English (Moonshine on macOS, Kroko via sherpa-onnx elsewhere) and Russian (Vosk via sherpa-onnx); language and model are chosen in the Voice panel.
 - Faster drawing: when a label would overflow its shape, the app grows the shape itself instead of sending the agent on another edit pass, and it measures labels with Excalidraw's own 5 px padding.
 - OpenAI Realtime transcription now defaults to `gpt-live-transcribe`, and its menu drops `whisper-1`, `gpt-4o-transcribe` and `gpt-4o-mini-transcribe`, which OpenAI no longer serves for realtime transcription; a saved pick of one of them switches on start. The Ollama model field suggests `qwen3.6`. Chosen from the vendors' docs, not verified live.

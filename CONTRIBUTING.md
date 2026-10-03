@@ -15,8 +15,15 @@ For anything bigger than a small fix, open an issue first so we can agree on the
 
 - Node 24+, plain JavaScript, ESM-only. See `AGENTS.md` for agent instructions and architecture notes.
 - Tests live under `test/*.test.js` and run with `node --test`.
-- Use conventional commit messages (`feat:`, `fix:`, `docs:`, `chore:`).
+- Add user-facing changes to `## Unreleased` in `CHANGELOG.md`; that section becomes the release notes.
 - Local Moonshine sidecar binaries under `packages/*/bin/` are generated artifacts (built by `npm run build:moonshine-sidecars` on macOS). Don't check them in.
+
+## Releases
+
+Maintainers release in two steps:
+
+1. A pull request runs `npm version X.Y.Z --no-git-tag-version` and renames `## Unreleased` in `CHANGELOG.md` to `## X.Y.Z (YYYY-MM-DD)`.
+2. After it merges, publish a GitHub Release with the tag `vX.Y.Z` on `main` and that changelog section as its notes. `.github/workflows/release.yml` checks the tag against `package.json`, runs the checks and publishes the package to npm.
 
 ## Questions
 

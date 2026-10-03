@@ -22,14 +22,13 @@ Mic Draw is based on [autopreso](https://github.com/kunchenguid/autopreso) by Ku
 
 ## Quick Start
 
-Mic Draw is not on npm yet. Run it from source:
+You need Node.js 24 or later.
 
 ```sh
-git clone https://github.com/ztemerbekov/micdraw.git
-cd micdraw
-npm install
-npm start                    # boots the server, opens the browser
+npx micdraw                  # boots the server, opens the browser
 ```
+
+`npm install -g micdraw` installs the `micdraw` command instead. To run from source, see [Development](#development).
 
 Then, in the browser:
 
@@ -223,6 +222,8 @@ Two deliberate differences from the OpenAI provider:
 ## Development
 
 ```sh
+git clone https://github.com/ztemerbekov/micdraw.git
+cd micdraw
 npm install                       # install deps
 npm run dev                       # run the CLI from source
 npm run typecheck                 # tsc --noEmit
