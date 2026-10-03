@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { parseSimulatorArgs } from "../src/simulator-options.js";
+import { parseSimulatorArgs } from "../scripts/lib/simulator-options.js";
 
 test("parseSimulatorArgs requires transcript and out paths", () => {
   assert.throws(() => parseSimulatorArgs([]), /--transcript is required/);

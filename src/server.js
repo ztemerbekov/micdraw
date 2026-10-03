@@ -5,9 +5,9 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { generateText, stepCountIs, streamText, tool } from "ai";
+import { asSchema, generateText, stepCountIs, streamText, tool } from "ai";
 import express from "express";
-import { WebSocket, WebSocketServer } from "ws";
+import { WebSocketServer } from "ws";
 import { z } from "zod";
 
 import {
@@ -25,7 +25,7 @@ import { createSherpaTranscription as createDefaultSherpaTranscription } from ".
 import { audioSecondsFromBase64Pcm16 } from "./session-cost.js";
 import { validateAgentInstructions } from "./settings-store.js";
 import { broadcast, createWhiteboardSession } from "./whiteboard-session.js";
-import { detectMalformedLayoutWarnings, fitShapesToLabels, normalizeWhiteboardElements } from "./whiteboard-elements.js";
+import { detectMalformedLayoutWarnings, fitShapesToLabels } from "./whiteboard-elements.js";
 import { extractWhiteboardKeywords } from "./whiteboard-keywords.js";
 import { applyWhiteboardEditOperations, formatLineNumberedWhiteboard } from "./whiteboard-tools.js";
 import { XAI_STT_MODEL, createXaiTranscription as createDefaultXaiTranscription } from "./xai-transcription.js";
@@ -72,6 +72,19 @@ export async function startServer(options) {
     queueTranscript: (transcript) => state.queueTranscript(transcript),
     state,
   });
+
+  // Saves a settings patch and switches engines in the background if needed
+  // (applyInBackground). Returns what pages may see: never the API keys.
+  async function saveSettings(patch) {
+    await options.settingsStore.save(patch);
+    await transcription.applyInBackground();
+    return options.settingsStore.getSanitized();
+  }
+
+  function broadcastSettings(sanitized) {
+    broadcast(wss, { type: "settings", settings: sanitized });
+    broadcast(wss, { type: "config", transcriptionEngine: transcription.getLabel() });
+  }
 
   app.get("/api/config", async (_req, res) => {
     const sanitized = options.settingsStore ? await options.settingsStore.getSanitized() : null;
@@ -166,16 +179,13 @@ export async function startServer(options) {
   app.put("/api/settings", async (req, res) => {
     if (!options.settingsStore) return res.status(404).json({ error: "Settings store not available." });
     try {
-      await options.settingsStore.save(req.body ?? {});
-      await transcription.applyInBackground();
-      const sanitized = await options.settingsStore.getSanitized();
+      const sanitized = await saveSettings(req.body ?? {});
       res.json({
         settings: sanitized,
         transcriptionEngine: transcription.getLabel(),
         transcriptionStatus: transcription.getStatus(),
       });
-      broadcast(wss, { type: "settings", settings: sanitized });
-      broadcast(wss, { type: "config", transcriptionEngine: transcription.getLabel() });
+      broadcastSettings(sanitized);
     } catch (error) {
       res.status(400).json({ error: error.message });
     }
@@ -188,6 +198,9 @@ export async function startServer(options) {
     // message; without a listener the error event would crash the process.
     client.on("error", (error) => console.warn(`[micdraw] websocket error: ${error.message}`));
     let activeAudioSessionId = null;
+    // Frames without a session id come from pages that predate session ids.
+    const isActiveAudioSession = (sessionId) =>
+      typeof sessionId === "string" ? sessionId === activeAudioSessionId : activeAudioSessionId === null;
     client.send(JSON.stringify({ type: "config", transcriptionEngine: transcription.getLabel() }));
     if (options.settingsStore) {
       const sanitized = await options.settingsStore.getSanitized();
@@ -215,15 +228,11 @@ export async function startServer(options) {
       }
 
       if (message.type === "audio") {
-        const hasSessionId = typeof message.sessionId === "string";
-        const matchesActiveSession = hasSessionId ? message.sessionId === activeAudioSessionId : activeAudioSessionId === null;
-        if (state.mode === "live" && matchesActiveSession) transcription.sendAudio(message.audio);
+        if (state.mode === "live" && isActiveAudioSession(message.sessionId)) transcription.sendAudio(message.audio);
       }
 
       if (message.type === "stop") {
-        const hasSessionId = typeof message.sessionId === "string";
-        const matchesActiveSession = hasSessionId ? message.sessionId === activeAudioSessionId : activeAudioSessionId === null;
-        if (matchesActiveSession) {
+        if (isActiveAudioSession(message.sessionId)) {
           transcription.stop();
           activeAudioSessionId = null;
           state.endSession();
@@ -249,11 +258,7 @@ export async function startServer(options) {
 
       if (message.type === "settings:update" && options.settingsStore) {
         try {
-          await options.settingsStore.save(message.patch ?? {});
-          await transcription.applyInBackground();
-          const sanitized = await options.settingsStore.getSanitized();
-          broadcast(wss, { type: "settings", settings: sanitized });
-          broadcast(wss, { type: "config", transcriptionEngine: transcription.getLabel() });
+          broadcastSettings(await saveSettings(message.patch ?? {}));
         } catch (error) {
           client.send(JSON.stringify({ type: "error", message: `Failed to apply settings: ${error.message}` }));
         }
@@ -324,14 +329,9 @@ export function transcriptionFactoryFor(kind) {
 
 async function createTranscriptionManager({ options, wss, queueTranscript, state }) {
   let current = null;
-  let label = "";
-  // Label plus language: a cloud engine whose language changed must restart
-  // even though its label did not.
-  let engineKey = "";
+  // What resolveTranscriptionEngine returned for `current`.
+  let active = null;
   let sessionContext = null;
-  let hasSessionContext = false;
-  let activeProvider = null;
-  let activeModel = null;
   let lastCostBroadcastAt = 0;
   // What the page shows in the Voice row while a new engine loads.
   let status = { state: "preparing", label: "" };
@@ -351,8 +351,14 @@ async function createTranscriptionManager({ options, wss, queueTranscript, state
     };
   }
 
+  // Label plus language: a cloud engine whose language changed must restart
+  // even though its label did not.
   function keyOf(engine) {
     return engine.language ? `${engine.label}|${engine.language}` : engine.label;
+  }
+
+  function label() {
+    return active?.label ?? "";
   }
 
   function buildOptionsForFactory(settings, engine, onProgress) {
@@ -364,6 +370,7 @@ async function createTranscriptionManager({ options, wss, queueTranscript, state
       onProgress,
     };
     if (!settings) return { ...options, ...engineOptions };
+    const env = options.env ?? process.env;
     return {
       ...options,
       ...engineOptions,
@@ -371,12 +378,12 @@ async function createTranscriptionManager({ options, wss, queueTranscript, state
       deepgramModel: settings.transcription.deepgram?.model,
       deepgramKeyterms: settings.transcription.deepgram?.keyterms,
       env: {
-        ...(options.env ?? process.env),
-        OPENAI_API_KEY: settings.apiKeys?.openai || (options.env ?? process.env).OPENAI_API_KEY,
+        ...env,
+        OPENAI_API_KEY: settings.apiKeys?.openai || env.OPENAI_API_KEY,
         // Deepgram gets its own key so the STT vendor and the agent vendor can
         // be different accounts.
-        DEEPGRAM_API_KEY: settings.apiKeys?.deepgram || (options.env ?? process.env).DEEPGRAM_API_KEY,
-        XAI_API_KEY: settings.apiKeys?.xai || (options.env ?? process.env).XAI_API_KEY,
+        DEEPGRAM_API_KEY: settings.apiKeys?.deepgram || env.DEEPGRAM_API_KEY,
+        XAI_API_KEY: settings.apiKeys?.xai || env.XAI_API_KEY,
       },
     };
   }
@@ -393,11 +400,11 @@ async function createTranscriptionManager({ options, wss, queueTranscript, state
   async function beginApply() {
     const settings = options.settingsStore ? await options.settingsStore.load() : null;
     const engine = resolveTranscriptionEngine(transcriptionFrom(settings), options.platform ?? process.platform);
-    if (current && keyOf(engine) === engineKey) {
+    if (current && keyOf(engine) === keyOf(active)) {
       generation += 1;
       loading?.close();
       loading = null;
-      setStatus({ state: "ready", label });
+      setStatus({ state: "ready", label: label() });
       return { ready: Promise.resolve() };
     }
 
@@ -417,7 +424,7 @@ async function createTranscriptionManager({ options, wss, queueTranscript, state
       env: factoryOptions.env,
     });
     loading = next;
-    if (hasSessionContext) next.setSessionContext?.(sessionContext);
+    if (sessionContext) next.setSessionContext?.(sessionContext);
 
     const ready = (async () => {
       try {
@@ -435,21 +442,13 @@ async function createTranscriptionManager({ options, wss, queueTranscript, state
       }
       const previous = current;
       current = next;
-      label = engine.label;
-      engineKey = keyOf(engine);
-      activeProvider = engine.provider;
-      activeModel = engine.model ?? null;
+      active = engine;
       previous?.close();
-      options.onStatus?.(`${label} transcription model ready.`);
-      setStatus({ state: "ready", label });
-      broadcast(wss, { type: "config", transcriptionEngine: label });
+      options.onStatus?.(`${engine.label} transcription model ready.`);
+      setStatus({ state: "ready", label: engine.label });
+      broadcast(wss, { type: "config", transcriptionEngine: engine.label });
     })();
     return { ready };
-  }
-
-  async function applyCurrent() {
-    const { ready } = await beginApply();
-    await ready;
   }
 
   // Settings changes return as soon as the new engine exists; the page follows
@@ -461,15 +460,16 @@ async function createTranscriptionManager({ options, wss, queueTranscript, state
     });
   }
 
-  await applyCurrent();
+  // Startup is the one place that waits for the engine to be ready.
+  await (await beginApply()).ready;
 
   return {
     sendAudio: (audio) => {
       current?.sendAudio(audio);
-      if (state?.cost && activeProvider) {
+      if (state?.cost && active) {
         state.cost.recordTranscriptionAudio({
-          provider: activeProvider,
-          model: activeModel,
+          provider: active.provider,
+          model: active.model ?? null,
           seconds: audioSecondsFromBase64Pcm16(audio),
         });
         // Throttle cost broadcast to ~once per second; audio frames arrive
@@ -490,13 +490,80 @@ async function createTranscriptionManager({ options, wss, queueTranscript, state
     },
     setSessionContext: (ctx) => {
       sessionContext = ctx;
-      hasSessionContext = true;
       current?.setSessionContext?.(ctx);
     },
-    getLabel: () => label,
+    getLabel: label,
     getStatus: () => status,
-    applyCurrent,
     applyInBackground,
+  };
+}
+
+// The model sees these tool definitions on every turn and every warmup attempt.
+// Warmup must send the same bytes for the prompt cache to carry over, so both
+// build their tools here and differ only in what execute does.
+const whiteboardElementSchema = z.record(z.string(), z.any());
+const editOperationSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("replace"),
+    line: z.number().int().positive().describe("Current 1-based line number to replace."),
+    element: whiteboardElementSchema.describe("Replacement drawing object for this line."),
+  }),
+  z.object({
+    type: z.literal("insert_after"),
+    line: z.number().int().min(0).describe("Current line number to insert after. Use 0 to insert at the start."),
+    element: whiteboardElementSchema.describe("Drawing object to insert after this line."),
+  }),
+  z.object({
+    type: z.literal("delete"),
+    line: z.number().int().positive().describe("Current 1-based line number to delete."),
+  }),
+]);
+const overwriteInputSchema = z.object({
+  elements: z.array(whiteboardElementSchema).describe("Complete replacement drawing object array."),
+});
+const applyInputSchema = z.object({
+  operations: z.array(editOperationSchema).optional().describe("Edit operations applied in order. Omit (or pass empty) when you only want to move the viewport."),
+  viewport: z.object({
+    action: z.enum(["scroll_to_content", "set_zoom", "zoom_in", "zoom_out", "reset_zoom"]),
+    zoom: z.number().min(0.1).max(3).optional().describe("Zoom value for set_zoom. 1 is 100%."),
+    focus_ids: z.array(z.string()).optional().describe("For scroll_to_content: stable element IDs the audience should look at right now (typically the elements you just edited or the cluster the speaker is currently discussing). Pass 1-5 IDs - the active talking point, not the whole diagram."),
+  }).optional().describe("Optional viewport command applied AFTER any edits. Omit when no viewport change is needed."),
+});
+
+function whiteboardTools({ overwrite, apply }) {
+  return {
+    whiteboard_overwrite: tool({
+      description: "Replace the entire whiteboard with a complete drawing object array. Use only for clearing, resetting, or starting fresh.",
+      inputSchema: overwriteInputSchema,
+      execute: overwrite,
+    }),
+    whiteboard_apply: tool({
+      description: "Apply edits and/or move the viewport in a SINGLE call. Combine everything you want to do this turn into one whiteboard_apply call - do not split into back-to-back calls. Either operations, viewport, or both must be provided. operations applies edits in line-number order; viewport scrolls/zooms after edits land. For scroll_to_content, ALWAYS pass focus_ids.",
+      inputSchema: applyInputSchema,
+      execute: apply,
+    }),
+  };
+}
+
+async function resolveRequestAgentProvider(options) {
+  return options.agentProvider
+    ?? (options.settingsStore
+      ? resolveAgentProviderFromSettings({ settings: await options.settingsStore.load(), env: options.env ?? process.env })
+      : defaultWhiteboardAgentProvider(options));
+}
+
+// Fold the primer text into the system prompt for both openai and codex
+// providers. The primer image (if any) stays in messages[0] - system prompts
+// are text-only across these APIs. This keeps the staging context as a
+// first-class system instruction rather than a stale early user message.
+function prepareAgentPrompt(state, agentProvider, messages) {
+  const primerText = extractPrimerText(state.agentHistory?.[0]);
+  const system = buildEffectiveSystemPrompt(whiteboardSystemPrompt(), primerText, state.agentInstructions);
+  return {
+    primerText,
+    system,
+    messages: primerText ? reshapeMessagesForCodex(messages) : messages,
+    codexInstructions: agentProvider.provider === "codex" ? system : null,
   };
 }
 
@@ -523,39 +590,9 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
     latestScreenshot: screenshotForAgent,
     transcript,
   });
-  const whiteboardElementSchema = z.record(z.string(), z.any());
-  const editOperationSchema = z.discriminatedUnion("type", [
-    z.object({
-      type: z.literal("replace"),
-      line: z.number().int().positive().describe("Current 1-based line number to replace."),
-      element: whiteboardElementSchema.describe("Replacement drawing object for this line."),
-    }),
-    z.object({
-      type: z.literal("insert_after"),
-      line: z.number().int().min(0).describe("Current line number to insert after. Use 0 to insert at the start."),
-      element: whiteboardElementSchema.describe("Drawing object to insert after this line."),
-    }),
-    z.object({
-      type: z.literal("delete"),
-      line: z.number().int().positive().describe("Current 1-based line number to delete."),
-    }),
-  ]);
-
-  const baseSystem = whiteboardSystemPrompt();
-
-  const agentProvider = options.agentProvider
-    ?? (options.settingsStore
-      ? resolveAgentProviderFromSettings({ settings: await options.settingsStore.load(), env: options.env ?? process.env })
-      : defaultWhiteboardAgentProvider(options));
-  // Fold the primer text into the system prompt for both openai and codex
-  // providers. The primer image (if any) stays in messages[0] - system prompts
-  // are text-only across these APIs. This keeps the staging context as a
-  // first-class system instruction rather than a stale early user message.
-  const primerText = extractPrimerText(state.agentHistory?.[0]);
-  const effectiveSystem = buildEffectiveSystemPrompt(baseSystem, primerText, state.agentInstructions);
-  const messages = primerText ? reshapeMessagesForCodex(rawMessages) : rawMessages;
+  const agentProvider = await resolveRequestAgentProvider(options);
+  const { primerText, system: effectiveSystem, messages, codexInstructions } = prepareAgentPrompt(state, agentProvider, rawMessages);
   options.onAgentEvent?.({ type: "model:start", transcript, system: effectiveSystem, messages, timestamp: new Date().toISOString() });
-  const codexInstructions = agentProvider.provider === "codex" ? effectiveSystem : null;
   dumpAgentRequest("turn", { system: effectiveSystem, messages, instructions: codexInstructions, primerText });
   const agentCallOptions = {
     model: createWhiteboardAgentModel(agentProvider),
@@ -564,93 +601,76 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
     stopWhen: [stepCountIs(4), editLandedCleanly],
     system: effectiveSystem,
     messages,
-    tools: {
-      whiteboard_overwrite: tool({
-        description: "Replace the entire whiteboard with a complete drawing object array. Use only for clearing, resetting, or starting fresh.",
-        inputSchema: z.object({
-          elements: z.array(whiteboardElementSchema).describe("Complete replacement drawing object array."),
-        }),
-        execute: async ({ elements }) => {
-          if (!mySession.active) return STALE_SESSION_TOOL_RESULT;
-          if (turn.signal.aborted) return TIMED_OUT_TOOL_RESULT;
-          options.onAgentEvent?.({ type: "tool:start", tool: "whiteboard_overwrite", input: { elements }, timestamp: new Date().toISOString() });
-          const normalizedElements = fitShapesToLabels(normalizeWhiteboardElements(elements));
-          state.elements = normalizedElements;
+    tools: whiteboardTools({
+      overwrite: async ({ elements }) => {
+        if (!mySession.active) return STALE_SESSION_TOOL_RESULT;
+        if (turn.signal.aborted) return TIMED_OUT_TOOL_RESULT;
+        options.onAgentEvent?.({ type: "tool:start", tool: "whiteboard_overwrite", input: { elements }, timestamp: new Date().toISOString() });
+        const normalizedElements = fitShapesToLabels(elements);
+        state.elements = normalizedElements;
+        state.canvasDirtyForAgent = true;
+        broadcast(wss, { type: "whiteboard:update", elements: normalizedElements });
+        const result = appendLayoutWarnings(formatLineNumberedWhiteboard(normalizedElements), normalizedElements);
+        dumpToolCall("whiteboard_overwrite", { elementCount: elements.length, ids: elements.map((el) => el.id) }, normalizedElements.map((el) => el.id), result);
+        options.onAgentEvent?.({ type: "tool:end", tool: "whiteboard_overwrite", result, elements: normalizedElements, timestamp: new Date().toISOString() });
+        return result;
+      },
+      apply: async ({ operations, viewport }) => {
+        if (!mySession.active) return STALE_SESSION_TOOL_RESULT;
+        if (turn.signal.aborted) return TIMED_OUT_TOOL_RESULT;
+        const hasOps = Array.isArray(operations) && operations.length > 0;
+        const hasViewport = viewport && typeof viewport === "object";
+        if (!hasOps && !hasViewport) {
+          const msg = "whiteboard_apply: Provide at least one of operations or viewport. Empty calls are not allowed - if there's nothing to do, don't call this tool.";
+          dumpToolCall("whiteboard_apply", { operations, viewport }, state.elements.map((el) => el.id), msg);
+          return msg;
+        }
+        options.onAgentEvent?.({ type: "tool:start", tool: "whiteboard_apply", input: { operations, viewport }, timestamp: new Date().toISOString() });
+
+        let canvasResult = "";
+        if (hasOps) {
+          const nextElements = fitShapesToLabels(applyWhiteboardEditOperations(state.elements, operations));
+          state.elements = nextElements;
           state.canvasDirtyForAgent = true;
-          broadcast(wss, { type: "whiteboard:update", elements: normalizedElements });
-          const result = appendLayoutWarnings(formatLineNumberedWhiteboard(normalizedElements), normalizedElements);
-          dumpToolCall("whiteboard_overwrite", { elementCount: elements.length, ids: elements.map((el) => el.id) }, normalizedElements.map((el) => el.id), result);
-          options.onAgentEvent?.({ type: "tool:end", tool: "whiteboard_overwrite", result, elements: normalizedElements, timestamp: new Date().toISOString() });
-          return result;
-        },
-      }),
-      whiteboard_apply: tool({
-        description: "Apply edits and/or move the viewport in a SINGLE call. Combine everything you want to do this turn into one whiteboard_apply call - do not split into back-to-back calls. Either operations, viewport, or both must be provided. operations applies edits in line-number order; viewport scrolls/zooms after edits land. For scroll_to_content, ALWAYS pass focus_ids.",
-        inputSchema: z.object({
-          operations: z.array(editOperationSchema).optional().describe("Edit operations applied in order. Omit (or pass empty) when you only want to move the viewport."),
-          viewport: z.object({
-            action: z.enum(["scroll_to_content", "set_zoom", "zoom_in", "zoom_out", "reset_zoom"]),
-            zoom: z.number().min(0.1).max(3).optional().describe("Zoom value for set_zoom. 1 is 100%."),
-            focus_ids: z.array(z.string()).optional().describe("For scroll_to_content: stable element IDs the audience should look at right now (typically the elements you just edited or the cluster the speaker is currently discussing). Pass 1-5 IDs - the active talking point, not the whole diagram."),
-          }).optional().describe("Optional viewport command applied AFTER any edits. Omit when no viewport change is needed."),
-        }),
-        execute: async ({ operations, viewport }) => {
-          if (!mySession.active) return STALE_SESSION_TOOL_RESULT;
-          if (turn.signal.aborted) return TIMED_OUT_TOOL_RESULT;
-          const hasOps = Array.isArray(operations) && operations.length > 0;
-          const hasViewport = viewport && typeof viewport === "object";
-          if (!hasOps && !hasViewport) {
-            const msg = "whiteboard_apply: Provide at least one of operations or viewport. Empty calls are not allowed - if there's nothing to do, don't call this tool.";
-            dumpToolCall("whiteboard_apply", { operations, viewport }, state.elements.map((el) => el.id), msg);
-            return msg;
-          }
-          options.onAgentEvent?.({ type: "tool:start", tool: "whiteboard_apply", input: { operations, viewport }, timestamp: new Date().toISOString() });
+          broadcast(wss, { type: "whiteboard:update", elements: nextElements });
+          canvasResult = appendLayoutWarnings(formatLineNumberedWhiteboard(nextElements), nextElements);
+        }
 
-          let canvasResult = "";
-          if (hasOps) {
-            const nextElements = fitShapesToLabels(normalizeWhiteboardElements(applyWhiteboardEditOperations(state.elements, operations)));
-            state.elements = nextElements;
-            state.canvasDirtyForAgent = true;
-            broadcast(wss, { type: "whiteboard:update", elements: nextElements });
-            canvasResult = appendLayoutWarnings(formatLineNumberedWhiteboard(nextElements), nextElements);
-          }
-
-          let viewportResult = "";
-          if (hasViewport) {
-            const { action, zoom, focus_ids } = viewport;
-            const broadcastPayload = {
-              action,
-              ...(zoom === undefined ? {} : { zoom }),
-              ...(Array.isArray(focus_ids) && focus_ids.length > 0 ? { focus_ids } : {}),
-            };
-            broadcast(wss, { type: "whiteboard:viewport", ...broadcastPayload });
-            if (action === "scroll_to_content") {
-              if (!focus_ids || focus_ids.length === 0) {
-                viewportResult = "Viewport scrolled to fit ALL content. Next time, pass focus_ids so the audience sees the active talking point, not the whole canvas.";
-              } else {
-                const sceneIds = new Set(state.elements.map((el) => el.id));
-                const known = focus_ids.filter((id) => sceneIds.has(id));
-                const unknown = focus_ids.filter((id) => !sceneIds.has(id));
-                if (known.length === 0) {
-                  viewportResult = `Viewport WARNING: none of focus_ids ${JSON.stringify(focus_ids)} match any element in the current scene (scene has ids: ${JSON.stringify([...sceneIds].slice(0, 12))}${sceneIds.size > 12 ? ", ..." : ""}). The frontend fell back to fitting the entire canvas. Use IDs from the line-numbered whiteboard content above.`;
-                } else if (unknown.length > 0) {
-                  viewportResult = `Viewport command sent. NOTE: ${unknown.length} of your focus_ids did not match any scene element and were ignored: ${JSON.stringify(unknown)}. The viewport scrolled to: ${JSON.stringify(known)}.`;
-                } else {
-                  viewportResult = `Viewport scrolled to ${known.length} element${known.length === 1 ? "" : "s"}: ${JSON.stringify(known)}.`;
-                }
-              }
+        let viewportResult = "";
+        if (hasViewport) {
+          const { action, zoom, focus_ids } = viewport;
+          const broadcastPayload = {
+            action,
+            ...(zoom === undefined ? {} : { zoom }),
+            ...(Array.isArray(focus_ids) && focus_ids.length > 0 ? { focus_ids } : {}),
+          };
+          broadcast(wss, { type: "whiteboard:viewport", ...broadcastPayload });
+          if (action === "scroll_to_content") {
+            if (!focus_ids || focus_ids.length === 0) {
+              viewportResult = "Viewport scrolled to fit ALL content. Next time, pass focus_ids so the audience sees the active talking point, not the whole canvas.";
             } else {
-              viewportResult = "Viewport command sent.";
+              const sceneIds = new Set(state.elements.map((el) => el.id));
+              const known = focus_ids.filter((id) => sceneIds.has(id));
+              const unknown = focus_ids.filter((id) => !sceneIds.has(id));
+              if (known.length === 0) {
+                viewportResult = `Viewport WARNING: none of focus_ids ${JSON.stringify(focus_ids)} match any element in the current scene (scene has ids: ${JSON.stringify([...sceneIds].slice(0, 12))}${sceneIds.size > 12 ? ", ..." : ""}). The frontend fell back to fitting the entire canvas. Use IDs from the line-numbered whiteboard content above.`;
+              } else if (unknown.length > 0) {
+                viewportResult = `Viewport command sent. NOTE: ${unknown.length} of your focus_ids did not match any scene element and were ignored: ${JSON.stringify(unknown)}. The viewport scrolled to: ${JSON.stringify(known)}.`;
+              } else {
+                viewportResult = `Viewport scrolled to ${known.length} element${known.length === 1 ? "" : "s"}: ${JSON.stringify(known)}.`;
+              }
             }
+          } else {
+            viewportResult = "Viewport command sent.";
           }
+        }
 
-          const result = [canvasResult, viewportResult].filter(Boolean).join("\n\n");
-          dumpToolCall("whiteboard_apply", { operations, viewport }, state.elements.map((el) => el.id), result);
-          options.onAgentEvent?.({ type: "tool:end", tool: "whiteboard_apply", result, elements: state.elements, timestamp: new Date().toISOString() });
-          return result;
-        },
-      }),
-    },
+        const result = [canvasResult, viewportResult].filter(Boolean).join("\n\n");
+        dumpToolCall("whiteboard_apply", { operations, viewport }, state.elements.map((el) => el.id), result);
+        options.onAgentEvent?.({ type: "tool:end", tool: "whiteboard_apply", result, elements: state.elements, timestamp: new Date().toISOString() });
+        return result;
+      },
+    }),
   };
 
   const result = await withTimeout(
@@ -664,11 +684,7 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
   const turnUsage = { usage: result?.totalUsage ?? result?.usage };
   logAgentUsage("turn", turnUsage, {
     transcript: transcript?.slice(0, 80),
-    fingerprints: {
-      system: fingerprint(effectiveSystem),
-      primer: fingerprint(state.agentHistory[0]),
-      tools: fingerprint(toolDefinitionFingerprintInput(agentCallOptions.tools)),
-    },
+    fingerprints: requestFingerprints(effectiveSystem, state.agentHistory[0], agentCallOptions.tools),
   });
   recordAgentCost(state, wss, agentProvider, turnUsage);
   options.onAgentEvent?.({ type: "model:end", transcript, result: summarizeAgentResult(result), timestamp: new Date().toISOString() });
@@ -736,92 +752,41 @@ async function runWhiteboardAgentGeneration(agentProvider, agentCallOptions, { g
 // appended to agentHistory after warmup. Once warmup writes a cache entry for
 // [primer, WARMUP_USER_MESSAGE], every subsequent turn whose prefix starts with
 // [primer, WARMUP_USER_MESSAGE, assistant("UNDERSTOOD"), ...] hits that cache.
-export const WARMUP_USER_MESSAGE = {
+const WARMUP_USER_MESSAGE = {
   role: "user",
   content: "Speaker turn:\n(cache warmup - no spoken content yet, confirm readiness by responding UNDERSTOOD without calling tools)",
 };
-export const WARMUP_ASSISTANT_REPLY = { role: "assistant", content: "UNDERSTOOD" };
-export const WARMUP_PRIMING_MESSAGES = [WARMUP_USER_MESSAGE, WARMUP_ASSISTANT_REPLY];
+const WARMUP_ASSISTANT_REPLY = { role: "assistant", content: "UNDERSTOOD" };
+const WARMUP_PRIMING_MESSAGES = [WARMUP_USER_MESSAGE, WARMUP_ASSISTANT_REPLY];
 
-export async function runWhiteboardWarmupOnce({ state, options, wss = null, attempt = 1, generateTextFn = generateText, streamTextFn = streamText }) {
+async function runWhiteboardWarmupOnce({ state, options, wss = null, attempt = 1, generateTextFn = generateText, streamTextFn = streamText }) {
   if (!Array.isArray(state.agentHistory) || state.agentHistory.length === 0) return undefined;
 
-  const baseSystem = whiteboardSystemPrompt();
-  const agentProvider = options.agentProvider
-    ?? (options.settingsStore
-      ? resolveAgentProviderFromSettings({ settings: await options.settingsStore.load(), env: options.env ?? process.env })
-      : defaultWhiteboardAgentProvider(options));
-  const primerText = extractPrimerText(state.agentHistory[0]);
-  const effectiveSystem = buildEffectiveSystemPrompt(baseSystem, primerText, state.agentInstructions);
-
+  const agentProvider = await resolveRequestAgentProvider(options);
   // Each warmup attempt sends the IDENTICAL prefix [primer, WARMUP_USER_MESSAGE]
   // so attempt N hits the cache that attempt N-1 wrote. We must NOT mutate
   // state.agentHistory until the loop ends - otherwise attempt 2's prefix
   // would differ from attempt 1's and cache wouldn't share.
-  const all = [...state.agentHistory, WARMUP_USER_MESSAGE];
-  const messages = primerText ? reshapeMessagesForCodex(all) : all;
+  const { primerText, system: effectiveSystem, messages, codexInstructions } = prepareAgentPrompt(state, agentProvider, [...state.agentHistory, WARMUP_USER_MESSAGE]);
 
   options.onAgentEvent?.({ type: "warmup:start", attempt, system: effectiveSystem, timestamp: new Date().toISOString() });
 
-  // Same tool definitions as the live agent so the request prefix matches and
-  // automatic prompt cache fires on subsequent transcript turns.
-  const whiteboardElementSchema = z.record(z.string(), z.any());
-  const editOperationSchema = z.discriminatedUnion("type", [
-    z.object({
-      type: z.literal("replace"),
-      line: z.number().int().positive().describe("Current 1-based line number to replace."),
-      element: whiteboardElementSchema.describe("Replacement drawing object for this line."),
-    }),
-    z.object({
-      type: z.literal("insert_after"),
-      line: z.number().int().min(0).describe("Current line number to insert after. Use 0 to insert at the start."),
-      element: whiteboardElementSchema.describe("Drawing object to insert after this line."),
-    }),
-    z.object({
-      type: z.literal("delete"),
-      line: z.number().int().positive().describe("Current 1-based line number to delete."),
-    }),
-  ]);
   const noop = async () => "warmup-noop";
-
   const callOptions = {
     model: createWhiteboardAgentModel(agentProvider),
     providerOptions: createWhiteboardAgentProviderOptions(agentProvider, effectiveSystem),
     stopWhen: stepCountIs(1),
     system: effectiveSystem,
     messages,
-    tools: {
-      whiteboard_overwrite: tool({
-        description: "Replace the entire whiteboard with a complete drawing object array. Use only for clearing, resetting, or starting fresh.",
-        inputSchema: z.object({
-          elements: z.array(whiteboardElementSchema).describe("Complete replacement drawing object array."),
-        }),
-        execute: noop,
-      }),
-      whiteboard_apply: tool({
-        description: "Apply edits and/or move the viewport in a SINGLE call. Combine everything you want to do this turn into one whiteboard_apply call - do not split into back-to-back calls. Either operations, viewport, or both must be provided. operations applies edits in line-number order; viewport scrolls/zooms after edits land. For scroll_to_content, ALWAYS pass focus_ids.",
-        inputSchema: z.object({
-          operations: z.array(editOperationSchema).optional().describe("Edit operations applied in order. Omit (or pass empty) when you only want to move the viewport."),
-          viewport: z.object({
-            action: z.enum(["scroll_to_content", "set_zoom", "zoom_in", "zoom_out", "reset_zoom"]),
-            zoom: z.number().min(0.1).max(3).optional().describe("Zoom value for set_zoom. 1 is 100%."),
-            focus_ids: z.array(z.string()).optional().describe("For scroll_to_content: stable element IDs the audience should look at right now (typically the elements you just edited or the cluster the speaker is currently discussing). Pass 1-5 IDs - the active talking point, not the whole diagram."),
-          }).optional().describe("Optional viewport command applied AFTER any edits. Omit when no viewport change is needed."),
-        }),
-        execute: noop,
-      }),
-    },
+    // The live agent's tool definitions, so the request prefix matches and
+    // automatic prompt cache fires on subsequent transcript turns.
+    tools: whiteboardTools({ overwrite: noop, apply: noop }),
   };
 
-  const fingerprints = {
-    system: fingerprint(effectiveSystem),
-    primer: fingerprint(state.agentHistory[0]),
-    tools: fingerprint(toolDefinitionFingerprintInput(callOptions.tools)),
-  };
+  const fingerprints = requestFingerprints(effectiveSystem, state.agentHistory[0], callOptions.tools);
 
-  const codexInstructionsForWarmup = agentProvider.provider === "codex" ? effectiveSystem : null;
   const label = `warmup#${attempt}`;
-  dumpAgentRequest(label, { system: effectiveSystem, messages, instructions: codexInstructionsForWarmup, primerText });
+  dumpAgentRequest(label, { system: effectiveSystem, messages, instructions: codexInstructions, primerText });
   const result = await withTimeout(
     runWhiteboardAgentGeneration(agentProvider, callOptions, { generateTextFn, streamTextFn }),
     options.warmupTimeoutMs ?? options.agentTimeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS,
@@ -840,10 +805,10 @@ function recordAgentCost(state, wss, agentProvider, result) {
   // Codex isn't priced per token here; the tracker shows the model for context.
   const model = agentProvider.model;
   state.cost.recordAgentUsage({ provider: agentProvider.provider, model, usage });
-  if (wss) broadcastCost(wss, state);
+  broadcastCost(wss, state);
 }
 
-export function broadcastCost(wss, state) {
+function broadcastCost(wss, state) {
   if (!wss || !state?.cost) return;
   broadcast(wss, { type: "cost", ...state.cost.getSummary() });
 }
@@ -858,42 +823,35 @@ function summarizeAgentResult(result) {
   );
 }
 
-// Node's test runner marks its child processes with NODE_TEST_CONTEXT. Tests
-// must not write fake turns into the user's real logs (#35).
-const DEFAULT_LOG_DIR = process.env.NODE_TEST_CONTEXT
-  ? path.join(os.tmpdir(), "micdraw-test-logs")
-  : path.join(os.homedir(), ".config", "micdraw", "logs");
-const CACHE_USAGE_LOG_PATH = process.env.MICDRAW_CACHE_LOG ?? path.join(DEFAULT_LOG_DIR, "cache.log");
-const DEBUG_LOG_PATH = process.env.MICDRAW_DEBUG_LOG ?? path.join(DEFAULT_LOG_DIR, "debug.log");
 // The debug log keeps whole requests and grew to megabytes in a day of use.
 // Past this size a log moves to "<name>.1" (replacing an older one) and
 // starts afresh.
 const LOG_MAX_BYTES = 10 * 1024 * 1024;
 
-export function agentLogPaths() {
-  return { cache: CACHE_USAGE_LOG_PATH, debug: DEBUG_LOG_PATH };
+export function agentLogPaths(env = process.env) {
+  // Node's test runner marks its child processes with NODE_TEST_CONTEXT.
+  // Tests must not write fake turns into the user's real logs (#35).
+  const dir = env.NODE_TEST_CONTEXT
+    ? path.join(os.tmpdir(), "micdraw-test-logs")
+    : path.join(os.homedir(), ".config", "micdraw", "logs");
+  return {
+    cache: env.MICDRAW_CACHE_LOG ?? path.join(dir, "cache.log"),
+    debug: env.MICDRAW_DEBUG_LOG ?? path.join(dir, "debug.log"),
+  };
 }
 
 export function appendToLog(file, text, { maxBytes = LOG_MAX_BYTES } = {}) {
+  try {
+    mkdirSync(path.dirname(file), { recursive: true });
+  } catch {
+    // Best effort; appendFileSync below surfaces a real failure.
+  }
   try {
     if (statSync(file).size > maxBytes) renameSync(file, `${file}.1`);
   } catch {
     // No log yet.
   }
   appendFileSync(file, text);
-}
-
-let logDirsEnsured = false;
-function ensureLogDirs() {
-  if (logDirsEnsured) return;
-  for (const file of [CACHE_USAGE_LOG_PATH, DEBUG_LOG_PATH]) {
-    try {
-      mkdirSync(path.dirname(file), { recursive: true });
-    } catch {
-      // Best effort; the appendFileSync call below will surface a real failure.
-    }
-  }
-  logDirsEnsured = true;
 }
 
 function summarizeMessageForDump(message) {
@@ -922,7 +880,6 @@ function summarizeMessageForDump(message) {
 
 export function dumpAgentRequest(label, args) {
   const { system, messages, instructions, primerText } = args ?? {};
-  ensureLogDirs();
   try {
     const record = {
       ts: new Date().toISOString(),
@@ -939,14 +896,13 @@ export function dumpAgentRequest(label, args) {
       messageCount: Array.isArray(messages) ? messages.length : 0,
       messages: Array.isArray(messages) ? messages.map(summarizeMessageForDump) : null,
     };
-    appendToLog(DEBUG_LOG_PATH, "\n" + "=".repeat(80) + "\n" + JSON.stringify(record, null, 2) + "\n");
+    appendToLog(agentLogPaths().debug, "\n" + "=".repeat(80) + "\n" + JSON.stringify(record, null, 2) + "\n");
   } catch (error) {
     console.warn("[debug] failed to append to debug log:", error.message);
   }
 }
 
-export function dumpToolCall(toolName, input, sceneIds, result) {
-  ensureLogDirs();
+function dumpToolCall(toolName, input, sceneIds, result) {
   try {
     const record = {
       ts: new Date().toISOString(),
@@ -955,7 +911,7 @@ export function dumpToolCall(toolName, input, sceneIds, result) {
       sceneIds: Array.isArray(sceneIds) ? sceneIds : null,
       resultPreview: typeof result === "string" ? result.slice(0, 600) : result,
     };
-    appendToLog(DEBUG_LOG_PATH, "\n" + "-".repeat(80) + "\nTOOL CALL: " + JSON.stringify(record, null, 2) + "\n");
+    appendToLog(agentLogPaths().debug, "\n" + "-".repeat(80) + "\nTOOL CALL: " + JSON.stringify(record, null, 2) + "\n");
   } catch (error) {
     console.warn("[debug] failed to append tool call to debug log:", error.message);
   }
@@ -983,35 +939,18 @@ function fingerprint(value) {
   }
 }
 
-function toolDefinitionFingerprintInput(tools) {
-  // The execute callbacks are closures and can't be JSON-stringified. For cache
-  // parity we only care about the parts the model sees: name, description, and
-  // input schema. Zod schemas don't serialize cleanly so we read shape via _def
-  // when present; this is a best-effort fingerprint, not a JSON-Schema dump.
-  if (!tools || typeof tools !== "object") return null;
-  const out = {};
-  for (const [name, def] of Object.entries(tools)) {
-    let keys = [];
-    try {
-      const shape = def?.inputSchema?._def?.shape;
-      const resolved = typeof shape === "function" ? shape() : (shape ?? def?.inputSchema?.shape ?? {});
-      keys = Object.keys(resolved).sort();
-    } catch {
-      keys = [];
-    }
-    out[name] = {
-      description: def?.description ?? null,
-      schemaShape: def?.inputSchema?._def?.typeName ?? typeof def?.inputSchema,
-      schemaKeys: keys,
-    };
-  }
-  return out;
+// What the model sees of the request: the system prompt, the primer and the
+// tool definitions (name, description, input schema; execute is a closure).
+function requestFingerprints(system, primer, tools) {
+  const toolDefinitions = Object.fromEntries(
+    Object.entries(tools).map(([name, def]) => [name, { description: def.description, schema: asSchema(def.inputSchema).jsonSchema }]),
+  );
+  return { system: fingerprint(system), primer: fingerprint(primer), tools: fingerprint(toolDefinitions) };
 }
 
 export function logAgentUsage(label, result, extras = {}) {
   const { input, cached, output, reasoning } = extractAgentUsage(result);
   const cachePct = input > 0 ? Math.round((cached / input) * 100) : 0;
-  ensureLogDirs();
   try {
     const record = {
       ts: new Date().toISOString(),
@@ -1024,7 +963,7 @@ export function logAgentUsage(label, result, extras = {}) {
       rawUsage: result?.usage ?? null,
       ...extras,
     };
-    appendToLog(CACHE_USAGE_LOG_PATH, JSON.stringify(record) + "\n");
+    appendToLog(agentLogPaths().cache, JSON.stringify(record) + "\n");
   } catch (error) {
     // Don't let logging break the agent flow.
     console.warn("[cache] failed to append to log file:", error.message);
@@ -1046,7 +985,7 @@ function createWhiteboardAgentProviderOptions(agentProvider, effectiveSystem) {
   };
 }
 
-export function buildEffectiveSystemPrompt(systemPrompt, primerText, userInstructions = "") {
+function buildEffectiveSystemPrompt(systemPrompt, primerText, userInstructions = "") {
   let result = systemPrompt;
   const trimmedUserInstructions = typeof userInstructions === "string" ? userInstructions.trim() : "";
   if (trimmedUserInstructions) {
@@ -1122,7 +1061,7 @@ function formatSpeakerTurn(transcript) {
   return `Speaker turn:\n${transcript.trim()}`;
 }
 
-export function buildStagingPrimerMessage({ stagingElements, stagingScreenshot }) {
+function buildStagingPrimerMessage({ stagingElements, stagingScreenshot }) {
   const elementsText = formatLineNumberedWhiteboard(stagingElements);
   const text = `Reference context for this presentation:
 

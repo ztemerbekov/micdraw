@@ -244,7 +244,7 @@ cd micdraw
 npm install                       # install deps
 npm run dev                       # run the CLI from source
 npm run typecheck                 # tsc --noEmit
-npm test                          # node --test
+npm test                          # node --test on test/**/*.test.js
 npm run build:moonshine-sidecars  # build the Python sidecar binaries
 ```
 

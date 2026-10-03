@@ -1,49 +1,9 @@
 // @ts-nocheck - hand-rolled EventEmitter is used as a fake WebSocket; structural types fight here.
 import assert from "node:assert/strict";
-import { EventEmitter } from "node:events";
 import { test } from "node:test";
 
 import { buildXaiSttUrl, createXaiTranscription, parseXaiMessage } from "../src/xai-transcription.js";
-
-function createMockSocket() {
-  const socket = new EventEmitter();
-  socket.sent = [];
-  socket.binary = [];
-  socket.closed = false;
-  socket.send = (data) => {
-    if (Buffer.isBuffer(data)) socket.binary.push(data);
-    else socket.sent.push(String(data));
-  };
-  socket.close = () => {
-    socket.closed = true;
-    socket.emit("close");
-  };
-  socket.receive = (message) => socket.emit("message", Buffer.from(JSON.stringify(message)));
-  return socket;
-}
-
-function createFakeClock() {
-  let now = 0;
-  let nextId = 1;
-  const timers = new Map();
-  return {
-    setTimeoutFn: (fn, ms) => {
-      const id = nextId++;
-      timers.set(id, { fn, at: now + ms });
-      return id;
-    },
-    clearTimeoutFn: (id) => timers.delete(id),
-    advance(ms) {
-      now += ms;
-      for (const [id, timer] of [...timers]) {
-        if (timer.at <= now) {
-          timers.delete(id);
-          timer.fn();
-        }
-      }
-    },
-  };
-}
+import { createFakeClock, createMockSocket } from "./helpers/fakes.js";
 
 function setup({ options = {}, env = { XAI_API_KEY: "xai-test" } } = {}) {
   const sockets = [];

@@ -1,6 +1,6 @@
 import { WebSocket } from "ws";
 
-import { mergeKeyterms } from "./deepgram-transcription.js";
+import { mergeKeyterms, sameTerms } from "./deepgram-transcription.js";
 
 const XAI_STT_URL = "wss://api.x.ai/v1/stt";
 
@@ -94,7 +94,6 @@ export function createXaiTranscription({
   let interim = "";
 
   let activeKeyterms = [];
-  const finalizeGraceMs = Number.isFinite(options.xaiFinalizeGraceMs) ? Number(options.xaiFinalizeGraceMs) : DEFAULT_FINALIZE_GRACE_MS;
 
   function currentText() {
     return extend(held, interim).replace(/\s+/g, " ").trim();
@@ -223,7 +222,7 @@ export function createXaiTranscription({
   }
 
   function applyKeyterms(next) {
-    if (next.length === activeKeyterms.length && next.every((term, i) => term === activeKeyterms[i])) return;
+    if (sameTerms(next, activeKeyterms)) return;
     activeKeyterms = next;
     log.debug?.(`[xai-transcription] keyterms set (${next.length} term(s))`);
     // Keyterms live in the connect URL, so a change needs a new socket. It
@@ -285,14 +284,10 @@ export function createXaiTranscription({
         log.debug?.(`[xai-transcription] finalize failed: ${error.message}`);
       }
       cancelFinalizeTimer();
-      if (finalizeGraceMs <= 0) {
-        commitTurn();
-        return;
-      }
       finalizeTimer = setTimeoutFn(() => {
         finalizeTimer = null;
         commitTurn();
-      }, finalizeGraceMs);
+      }, DEFAULT_FINALIZE_GRACE_MS);
       finalizeTimer?.unref?.();
     },
     close: () => {

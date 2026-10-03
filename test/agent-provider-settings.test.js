@@ -1,10 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { test } from "node:test";
 
 import { resolveAgentProviderFromSettings } from "../src/agent-provider.js";
+import { codexHomeWith, tempDir } from "./helpers/tmp.js";
 
 function settingsBase() {
   return {
@@ -109,9 +107,8 @@ test("resolveAgentProviderFromSettings throws when Ollama model is missing", () 
   );
 });
 
-test("resolveAgentProviderFromSettings returns Codex provider using filesystem auth", () => {
-  const codexHome = mkdtempSync(join(tmpdir(), "micdraw-codex-"));
-  writeFileSync(join(codexHome, "auth.json"), JSON.stringify({ tokens: { access_token: "codex-token", refresh_token: "refresh" } }));
+test("resolveAgentProviderFromSettings returns Codex provider using filesystem auth", (t) => {
+  const codexHome = codexHomeWith(t);
 
   const settings = settingsBase();
   settings.agent.provider = "codex";
@@ -127,9 +124,8 @@ test("resolveAgentProviderFromSettings returns Codex provider using filesystem a
   });
 });
 
-test("resolveAgentProviderFromSettings defaults Codex provider to fast mode", () => {
-  const codexHome = mkdtempSync(join(tmpdir(), "micdraw-codex-default-"));
-  writeFileSync(join(codexHome, "auth.json"), JSON.stringify({ tokens: { access_token: "codex-token", refresh_token: "refresh" } }));
+test("resolveAgentProviderFromSettings defaults Codex provider to fast mode", (t) => {
+  const codexHome = codexHomeWith(t);
 
   const settings = settingsBase();
   settings.agent.provider = "codex";
@@ -146,9 +142,8 @@ test("resolveAgentProviderFromSettings defaults Codex provider to fast mode", ()
   });
 });
 
-test("resolveAgentProviderFromSettings sends Codex without Fast mode when it is off", () => {
-  const codexHome = mkdtempSync(join(tmpdir(), "micdraw-codex-standard-"));
-  writeFileSync(join(codexHome, "auth.json"), JSON.stringify({ tokens: { access_token: "codex-token", refresh_token: "refresh" } }));
+test("resolveAgentProviderFromSettings sends Codex without Fast mode when it is off", (t) => {
+  const codexHome = codexHomeWith(t);
   const settings = settingsBase();
   settings.agent.provider = "codex";
   settings.agent.codex.fast = false;
@@ -158,9 +153,8 @@ test("resolveAgentProviderFromSettings sends Codex without Fast mode when it is 
   assert.equal(resolved.serviceTier, undefined);
 });
 
-test("resolveAgentProviderFromSettings still reads an old name ending in -fast", () => {
-  const codexHome = mkdtempSync(join(tmpdir(), "micdraw-codex-legacy-"));
-  writeFileSync(join(codexHome, "auth.json"), JSON.stringify({ tokens: { access_token: "codex-token", refresh_token: "refresh" } }));
+test("resolveAgentProviderFromSettings still reads an old name ending in -fast", (t) => {
+  const codexHome = codexHomeWith(t);
   const settings = settingsBase();
   settings.agent.provider = "codex";
   settings.agent.codex = /** @type {any} */ ({ model: "gpt-6.1-sol-fast", baseURL: "https://chatgpt.com/backend-api/codex" });
@@ -170,8 +164,8 @@ test("resolveAgentProviderFromSettings still reads an old name ending in -fast",
   assert.equal(resolved.serviceTier, "priority");
 });
 
-test("resolveAgentProviderFromSettings throws when Codex auth is unavailable", () => {
-  const codexHome = mkdtempSync(join(tmpdir(), "micdraw-codex-empty-"));
+test("resolveAgentProviderFromSettings throws when Codex auth is unavailable", (t) => {
+  const codexHome = tempDir(t, "micdraw-codex-empty-");
   const settings = settingsBase();
   settings.agent.provider = "codex";
 

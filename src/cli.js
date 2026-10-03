@@ -11,6 +11,13 @@ import { createSettingsStore } from "./settings-store.js";
 const SETTINGS_PATH = path.join(os.homedir(), ".config", "micdraw", "settings.json");
 const MODELS_DIR = path.join(os.homedir(), ".config", "micdraw", "models");
 
+// The cloud speech engines and the key each one needs, saved or from the shell.
+const SPEECH_KEYS = {
+  openai: { vendor: "OpenAI", envName: "OPENAI_API_KEY" },
+  deepgram: { vendor: "Deepgram", envName: "DEEPGRAM_API_KEY" },
+  xai: { vendor: "xAI", envName: "XAI_API_KEY" },
+};
+
 async function main() {
   let options;
   try {
@@ -30,9 +37,8 @@ async function main() {
   const settingsStore = createSettingsStore({ filePath: SETTINGS_PATH });
   const settings = await settingsStore.load();
 
-  let agentProvider;
   try {
-    agentProvider = resolveAgentProviderFromSettings({ settings, env: process.env });
+    resolveAgentProviderFromSettings({ settings, env: process.env });
   } catch (error) {
     console.error(`Whiteboard agent is not configured: ${error.message}`);
     console.error("Open the app and configure the agent in the status panel, or set OPENAI_API_KEY / OLLAMA_MODEL in your shell.");
@@ -41,23 +47,11 @@ async function main() {
     return;
   }
 
-  if (settings.transcription.provider === "openai" && !(settings.apiKeys?.openai || process.env.OPENAI_API_KEY)) {
-    console.error("OpenAI transcription is selected but no API key is configured.");
-    console.error("Open the app and add the key in the STT engine row, or set OPENAI_API_KEY in your shell.");
-    process.exitCode = 1;
-    return;
-  }
-
-  if (settings.transcription.provider === "deepgram" && !(settings.apiKeys?.deepgram || process.env.DEEPGRAM_API_KEY)) {
-    console.error("Deepgram transcription is selected but no API key is configured.");
-    console.error("Open the app and add the key in the STT engine row, or set DEEPGRAM_API_KEY in your shell.");
-    process.exitCode = 1;
-    return;
-  }
-
-  if (settings.transcription.provider === "xai" && !(settings.apiKeys?.xai || process.env.XAI_API_KEY)) {
-    console.error("xAI transcription is selected but no API key is configured.");
-    console.error("Open the app and add the key in the STT engine row, or set XAI_API_KEY in your shell.");
+  const speechProvider = settings.transcription.provider;
+  const speechKey = SPEECH_KEYS[speechProvider];
+  if (speechKey && !(settings.apiKeys?.[speechProvider] || process.env[speechKey.envName])) {
+    console.error(`${speechKey.vendor} transcription is selected but no API key is configured.`);
+    console.error(`Open the app and add the key in the STT engine row, or set ${speechKey.envName} in your shell.`);
     process.exitCode = 1;
     return;
   }

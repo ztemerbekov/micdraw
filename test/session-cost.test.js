@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { computeAgentCost, computeTranscriptionCost, createSessionCostTracker } from "../src/session-cost.js";
+import { audioSecondsFromBase64Pcm16, computeAgentCost, computeTranscriptionCost, createSessionCostTracker } from "../src/session-cost.js";
 
 test("computeAgentCost prices uncached input, cached input, and output separately", () => {
   // gpt-5.5: $5.00 input, $0.50 cached, $30.00 output per 1M tokens
@@ -95,19 +95,19 @@ test("createSessionCostTracker accumulates agent usage across turns", () => {
   assert.equal(summary.agent.cost.toFixed(6), expected.toFixed(6));
 });
 
-test("createSessionCostTracker tracks PCM16 24kHz audio seconds from base64", () => {
+test("createSessionCostTracker adds up PCM16 24kHz audio seconds", () => {
   const tracker = createSessionCostTracker();
   // 24000 samples * 2 bytes = 48000 bytes of PCM = 1 second
-  const oneSecondPcm = Buffer.alloc(48000).toString("base64");
+  const oneSecond = audioSecondsFromBase64Pcm16(Buffer.alloc(48000).toString("base64"));
   tracker.recordTranscriptionAudio({
     provider: "openai",
     model: "gpt-4o-transcribe",
-    base64Audio: oneSecondPcm,
+    seconds: oneSecond,
   });
   tracker.recordTranscriptionAudio({
     provider: "openai",
     model: "gpt-4o-transcribe",
-    base64Audio: oneSecondPcm,
+    seconds: oneSecond,
   });
   const summary = tracker.getSummary();
   assert.equal(Math.round(summary.transcription.seconds), 2);
@@ -125,7 +125,7 @@ test("createSessionCostTracker.reset clears agent and transcription state", () =
   tracker.recordTranscriptionAudio({
     provider: "openai",
     model: "gpt-4o-transcribe",
-    base64Audio: Buffer.alloc(48000).toString("base64"),
+    seconds: 1,
   });
   tracker.reset();
   const summary = tracker.getSummary();
@@ -146,7 +146,7 @@ test("createSessionCostTracker remembers the last seen model and provider", () =
   tracker.recordTranscriptionAudio({
     provider: "openai",
     model: "whisper-1",
-    base64Audio: Buffer.alloc(48000).toString("base64"),
+    seconds: 1,
   });
   const summary = tracker.getSummary();
   assert.equal(summary.agent.provider, "openai");

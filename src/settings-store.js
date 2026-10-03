@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { readCodexCliAuthSync } from "./codex-auth.js";
+import { DEFAULT_CODEX_BASE_URL, readCodexCliAuthSync } from "./codex-auth.js";
 import { transcriptionLanguages } from "./languages.js";
 import { LOCAL_MODELS, SUPPORTED_LANGUAGES } from "./local-models.js";
 
@@ -27,16 +27,29 @@ const RETIRED_REASONING_EFFORT = "none";
 const RETIRED_OPENAI_TRANSCRIPTION_MODELS = new Set(["whisper-1", "gpt-4o-transcribe", "gpt-4o-mini-transcribe"]);
 const OPENAI_TRANSCRIPTION_REPLACEMENT_MODEL = "gpt-live-transcribe";
 
+// Also the agent provider's fallbacks (src/agent-provider.js).
 export const DEFAULT_SETTINGS = Object.freeze({
   agent: {
     provider: "openai",
+    // GPT-6.1 Sol is the only OpenAI model Mic Draw offers; see
+    // DROPPED_AGENT_MODELS above.
     openai: { model: "gpt-6.1-sol", reasoningEffort: "low", baseURL: "https://api.openai.com/v1" },
     // `fast` sends Codex requests in OpenAI's Fast mode: quicker replies, at
     // 2.5x the ChatGPT plan usage.
-    codex: { model: "gpt-6.1-sol", fast: true, baseURL: "https://chatgpt.com/backend-api/codex" },
+    codex: { model: "gpt-6.1-sol", fast: true, baseURL: DEFAULT_CODEX_BASE_URL },
     ollama: { model: "", baseURL: "http://localhost:11434/v1" },
+    // OpenRouter fronts many vendors behind an OpenAI-shaped API, so the whole
+    // provider is a base URL, a key and a model id. Grok is the default
+    // because it answers a tool-call turn quickly; any OpenRouter model id
+    // works. Reviewed 2026-10-03 against OpenRouter's catalogue only, not
+    // verified live (#25): Grok 4.3-4.7 are newer, but nothing public shows
+    // them faster and 4.5+ cost more, so 4.20 stays until a measured turn says
+    // otherwise.
     openrouter: { model: "x-ai/grok-4.20", baseURL: "https://openrouter.ai/api/v1" },
-    // xAI directly, through its OpenAI-compatible API (#17).
+    // xAI directly, through its OpenAI-compatible API. Ported from upstream
+    // autopreso#24, whose author checked tool calling against the live API;
+    // here it is checked against xAI's docs only (#17). grok-4.3 is that PR's
+    // default and costs the same per token as grok-4.20.
     xai: { model: "grok-4.3", baseURL: "https://api.x.ai/v1" },
   },
   transcription: {
@@ -191,71 +204,53 @@ function deepMerge(target, source) {
   return result;
 }
 
+// The environment variable that seeds each setting on first run.
+const ENV_SEEDS = {
+  OPENAI_API_KEY: "apiKeys.openai",
+  OPENAI_MODEL: "agent.openai.model",
+  OPENAI_BASE_URL: "agent.openai.baseURL",
+  OPENAI_REASONING_EFFORT: "agent.openai.reasoningEffort",
+  CODEX_MODEL: "agent.codex.model",
+  CODEX_BASE_URL: "agent.codex.baseURL",
+  OLLAMA_MODEL: "agent.ollama.model",
+  OLLAMA_BASE_URL: "agent.ollama.baseURL",
+  DEEPGRAM_API_KEY: "apiKeys.deepgram",
+  DEEPGRAM_MODEL: "transcription.deepgram.model",
+  OPENROUTER_API_KEY: "apiKeys.openrouter",
+  OPENROUTER_MODEL: "agent.openrouter.model",
+  OPENROUTER_BASE_URL: "agent.openrouter.baseURL",
+  XAI_API_KEY: "apiKeys.xai",
+  XAI_MODEL: "agent.xai.model",
+  XAI_BASE_URL: "agent.xai.baseURL",
+};
+
+// `settings` are the defaults, so a value set below came from the environment.
 function seedFromEnv(settings, env, readCodexAuth) {
   const next = settings;
-  const openaiKey = trimOrEmpty(env.OPENAI_API_KEY);
-  if (openaiKey) next.apiKeys.openai = openaiKey;
-
-  const openaiModel = trimOrEmpty(env.OPENAI_MODEL);
-  if (openaiModel) next.agent.openai.model = openaiModel;
-
-  const openaiBaseURL = trimOrEmpty(env.OPENAI_BASE_URL);
-  if (openaiBaseURL) next.agent.openai.baseURL = openaiBaseURL;
-
-  const reasoningEffort = trimOrEmpty(env.OPENAI_REASONING_EFFORT);
-  if (reasoningEffort) next.agent.openai.reasoningEffort = reasoningEffort;
-
-  const codexModel = trimOrEmpty(env.CODEX_MODEL);
-  if (codexModel) next.agent.codex.model = codexModel;
-
-  const codexBaseURL = trimOrEmpty(env.CODEX_BASE_URL);
-  if (codexBaseURL) next.agent.codex.baseURL = codexBaseURL;
-
-  const ollamaModel = trimOrEmpty(env.OLLAMA_MODEL);
-  if (ollamaModel) next.agent.ollama.model = ollamaModel;
-
-  const ollamaBaseURL = trimOrEmpty(env.OLLAMA_BASE_URL);
-  if (ollamaBaseURL) next.agent.ollama.baseURL = ollamaBaseURL;
-
-  const deepgramKey = trimOrEmpty(env.DEEPGRAM_API_KEY);
-  if (deepgramKey) next.apiKeys.deepgram = deepgramKey;
-
-  const deepgramModel = trimOrEmpty(env.DEEPGRAM_MODEL);
-  if (deepgramModel) next.transcription.deepgram.model = deepgramModel;
-
-  const openrouterKey = trimOrEmpty(env.OPENROUTER_API_KEY);
-  if (openrouterKey) next.apiKeys.openrouter = openrouterKey;
-
-  const openrouterModel = trimOrEmpty(env.OPENROUTER_MODEL);
-  if (openrouterModel) next.agent.openrouter.model = openrouterModel;
-
-  const openrouterBaseURL = trimOrEmpty(env.OPENROUTER_BASE_URL);
-  if (openrouterBaseURL) next.agent.openrouter.baseURL = openrouterBaseURL;
-
-  const xaiKey = trimOrEmpty(env.XAI_API_KEY);
-  if (xaiKey) next.apiKeys.xai = xaiKey;
-
-  const xaiModel = trimOrEmpty(env.XAI_MODEL);
-  if (xaiModel) next.agent.xai.model = xaiModel;
-
-  const xaiBaseURL = trimOrEmpty(env.XAI_BASE_URL);
-  if (xaiBaseURL) next.agent.xai.baseURL = xaiBaseURL;
+  for (const [name, settingPath] of Object.entries(ENV_SEEDS)) {
+    const value = trimOrEmpty(env[name]);
+    if (!value) continue;
+    const keys = settingPath.split(".");
+    const last = keys.pop();
+    keys.reduce((node, key) => node[key], next)[last] = value;
+  }
+  const { apiKeys } = next;
 
   const codexAuth = safeReadCodexAuth(readCodexAuth, env);
   // An explicit OpenRouter key is a deliberate choice of a non-OpenAI agent, so
   // it outranks a Codex login that happens to be lying around.
-  if (openrouterKey) next.agent.provider = "openrouter";
+  if (apiKeys.openrouter) next.agent.provider = "openrouter";
   else if (codexAuth) next.agent.provider = "codex";
-  else if (ollamaModel) next.agent.provider = "ollama";
+  else if (next.agent.ollama.model) next.agent.provider = "ollama";
   // Like an OpenRouter key, an xAI key is a deliberate pick of a non-OpenAI agent.
-  else if (xaiKey) next.agent.provider = "xai";
+  else if (apiKeys.xai) next.agent.provider = "xai";
   else next.agent.provider = "openai";
 
   // Deepgram outranks OpenAI for speech: a box with both keys set has gone out
   // of its way to configure the dedicated STT vendor.
-  if (deepgramKey) next.transcription.provider = "deepgram";
-  else if (openaiKey) next.transcription.provider = "openai";
-  else if (xaiKey) next.transcription.provider = "xai";
+  if (apiKeys.deepgram) next.transcription.provider = "deepgram";
+  else if (apiKeys.openai) next.transcription.provider = "openai";
+  else if (apiKeys.xai) next.transcription.provider = "xai";
 
   return next;
 }

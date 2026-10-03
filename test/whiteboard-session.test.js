@@ -238,38 +238,34 @@ test("backToStaging cancels any in-flight warmup", async () => {
 });
 
 test("warmupPromise blocks transcript turns until cache is confirmed (or loop ends)", async () => {
-  const { session } = makeWarmupSession();
-  const turnsRanAt = [];
   const turns = [];
   const sessionWithAgent = createWhiteboardSession({
     options: {},
     wss: { clients: new Set() },
     runAgent: async ({ transcript }) => {
-      turnsRanAt.push(Date.now());
       turns.push(transcript);
     },
   });
   sessionWithAgent.mode = "live";
 
+  let finishWarmup = () => {};
   const warmupResolved = sessionWithAgent.startWarmupLoop({
-    runOnce: async () => {
-      await new Promise((r) => setTimeout(r, 50));
-      return { usage: { input: 1000, cached: 500, output: 5 } };
-    },
+    runOnce: () =>
+      new Promise((resolve) => {
+        finishWarmup = () => resolve({ usage: { input: 1000, cached: 500, output: 5 } });
+      }),
     delays: [10, 10, 10, 10, 10, 10, 10],
   });
-  const warmupStartedAt = Date.now();
 
   // Queue a transcript IMMEDIATELY - the runTurn awaits warmup before agent fires.
   sessionWithAgent.queueTranscript("OpenAI just released a new model");
-  await sessionWithAgent.idle();
-  await warmupResolved;
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(turns, [], "transcript should wait for the warmup");
 
-  assert.equal(turns.length, 1);
-  assert.ok(
-    turnsRanAt[0] - warmupStartedAt >= 40,
-    `transcript should have waited for warmup (took ${turnsRanAt[0] - warmupStartedAt}ms)`,
-  );
+  finishWarmup();
+  await warmupResolved;
+  await sessionWithAgent.idle();
+  assert.deepEqual(turns, ["OpenAI just released a new model"]);
 });
 
 test("startWarmupLoop appends primingMessages to agentHistory once the loop ends", async () => {

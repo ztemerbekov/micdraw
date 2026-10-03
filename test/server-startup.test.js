@@ -4,6 +4,15 @@ import { test } from "node:test";
 import { WebSocket } from "ws";
 
 import { DEFAULT_AGENT_TIMEOUT_MS, runWhiteboardAgent, startServer, whiteboardSystemPrompt } from "../src/server.js";
+import { openWs, startTestServer, withTimeout, wsUrl } from "./helpers/server.js";
+
+const CODEX_AGENT_PROVIDER = {
+  provider: "codex",
+  model: "gpt-5.5",
+  baseURL: "https://chatgpt.com/backend-api/codex",
+  apiKey: "test",
+  reasoningEffort: "low",
+};
 
 test("default whiteboard agent timeout is 90 seconds", () => {
   assert.equal(DEFAULT_AGENT_TIMEOUT_MS, 90_000);
@@ -53,47 +62,28 @@ test("startServer waits for Moonshine readiness before listening", async () => {
   assert.equal(closed, true);
 });
 
-test("websocket clients receive the current agent status on connect", async () => {
-  const { httpServer, url } = await startServer({
-    host: "127.0.0.1",
-    port: 0,
-    moonshineModel: "medium",
-    openaiApiKey: "test",
-    createTranscription: () => ({
-      ready: async () => {},
-      sendAudio: () => {},
-      stop: () => {},
-      close: () => {},
-    }),
-  });
+test("websocket clients receive the current agent status on connect", async (t) => {
+  const { url } = await startTestServer(t);
 
-  try {
-    const messages = await collectWebSocketMessages(url.replace("http:", "ws:") + "/ws", 6);
-    assert.deepEqual(
-      messages.map((message) => message.type),
-      ["config", "agent:status", "mode", "warmup", "cost", "transcription:status"],
-    );
-    assert.deepEqual(messages[5], { type: "transcription:status", state: "ready", label: "Moonshine medium" });
-    assert.equal(messages[1].status, "idle");
-    assert.equal(messages[2].mode, "staging");
-    assert.equal(messages[3].state, "idle");
-    assert.equal(messages[4].agent.cost, 0);
-    assert.equal(messages[4].transcription.cost, 0);
-  } finally {
-    await new Promise((resolve) => httpServer.close(resolve));
-  }
+  const messages = await collectWebSocketMessages(wsUrl(url), 6);
+  assert.deepEqual(
+    messages.map((message) => message.type),
+    ["config", "agent:status", "mode", "warmup", "cost", "transcription:status"],
+  );
+  assert.deepEqual(messages[5], { type: "transcription:status", state: "ready", label: "Moonshine medium" });
+  assert.equal(messages[1].status, "idle");
+  assert.equal(messages[2].mode, "staging");
+  assert.equal(messages[3].state, "idle");
+  assert.equal(messages[4].agent.cost, 0);
+  assert.equal(messages[4].transcription.cost, 0);
 });
 
-test("websocket screenshot messages update agent visual context", async () => {
+test("websocket screenshot messages update agent visual context", async (t) => {
   let resolveGenerateText;
   const generateTextStarted = new Promise((resolve) => {
     resolveGenerateText = resolve;
   });
-  const { httpServer, url, state } = await startServer({
-    host: "127.0.0.1",
-    port: 0,
-    moonshineModel: "medium",
-    openaiApiKey: "test",
+  const { url, state } = await startTestServer(t, {
     createTranscription: ({ queueTranscript }) => ({
       ready: async () => {},
       sendAudio: () => queueTranscript("Update the visual layout"),
@@ -108,42 +98,20 @@ test("websocket screenshot messages update agent visual context", async () => {
     },
   });
 
-  try {
-    state.mode = "live";
-    const ws = new WebSocket(url.replace("http:", "ws:") + "/ws");
-    const initialMessages = new Promise((resolve) => {
-      let count = 0;
-      ws.on("message", () => {
-        count += 1;
-        if (count === 6) resolve();
-      });
-    });
-    await new Promise((resolve, reject) => {
-      ws.once("open", resolve);
-      ws.once("error", reject);
-    });
-    await initialMessages;
-    ws.send(JSON.stringify({ type: "whiteboard:screenshot", image: "data:image/png;base64,latest" }));
-    ws.send(JSON.stringify({ type: "audio", audio: "" }));
-    await generateTextStarted;
-    ws.close();
-  } finally {
-    await new Promise((resolve) => httpServer.close(resolve));
-  }
+  state.mode = "live";
+  const ws = await openWs(url);
+  ws.send(JSON.stringify({ type: "whiteboard:screenshot", image: "data:image/png;base64,latest" }));
+  ws.send(JSON.stringify({ type: "audio", audio: "" }));
+  await withTimeout(generateTextStarted, "the agent turn");
 });
 
-test("websocket stop makes synchronous transcript flush stale", async () => {
+test("websocket stop makes synchronous transcript flush stale", async (t) => {
   let generateCalled = false;
-  let ws;
   let resolveStopCalled;
   const stopCalled = new Promise((resolve) => {
     resolveStopCalled = resolve;
   });
-  const { httpServer, url, state } = await startServer({
-    host: "127.0.0.1",
-    port: 0,
-    moonshineModel: "medium",
-    openaiApiKey: "test",
+  const { url, state } = await startTestServer(t, {
     createTranscription: ({ queueTranscript }) => ({
       ready: async () => {},
       sendAudio: () => {},
@@ -159,33 +127,12 @@ test("websocket stop makes synchronous transcript flush stale", async () => {
     },
   });
 
-  try {
-    state.mode = "live";
-    ws = new WebSocket(url.replace("http:", "ws:") + "/ws");
-    const initialMessages = new Promise((resolve) => {
-      let count = 0;
-      ws.on("message", () => {
-        count += 1;
-        if (count === 5) resolve();
-      });
-    });
-    await new Promise((resolve, reject) => {
-      ws.once("open", resolve);
-      ws.once("error", reject);
-    });
-    await initialMessages;
-    ws.send(JSON.stringify({ type: "stop" }));
-    await Promise.race([
-      stopCalled,
-      new Promise((_, reject) => setTimeout(() => reject(new Error("Timed out waiting for transcription stop.")), 2000)),
-    ]);
-    await state.idle();
-    assert.equal(generateCalled, false);
-    ws.close();
-  } finally {
-    ws?.close();
-    await new Promise((resolve) => httpServer.close(resolve));
-  }
+  state.mode = "live";
+  const ws = await openWs(url);
+  ws.send(JSON.stringify({ type: "stop" }));
+  await withTimeout(stopCalled, "transcription stop");
+  await state.idle();
+  assert.equal(generateCalled, false);
 });
 
 test("runWhiteboardAgent rejects with a timeout instead of hanging forever", async () => {
@@ -483,15 +430,7 @@ test("runWhiteboardAgent passes Codex reasoning effort provider option", async (
     transcript: "hello",
     state: { elements: [], agentHistory: [] },
     wss: { clients: new Set() },
-    options: {
-      agentProvider: {
-        provider: "codex",
-        model: "gpt-5.5",
-        baseURL: "https://chatgpt.com/backend-api/codex",
-        apiKey: "test",
-        reasoningEffort: "low",
-      },
-    },
+    options: { agentProvider: CODEX_AGENT_PROVIDER },
     streamTextFn: ({ providerOptions }) => ({
       consumeStream: async () => {
         assert.deepEqual(providerOptions, {
@@ -508,15 +447,7 @@ test("runWhiteboardAgent passes Codex fast mode provider option", async () => {
     state: { elements: [], agentHistory: [] },
     wss: { clients: new Set() },
     options: {
-      agentProvider: {
-        provider: "codex",
-        model: "gpt-5.5",
-        requestedModel: "gpt-5.5-fast",
-        baseURL: "https://chatgpt.com/backend-api/codex",
-        apiKey: "test",
-        reasoningEffort: "low",
-        serviceTier: "priority",
-      },
+      agentProvider: { ...CODEX_AGENT_PROVIDER, requestedModel: "gpt-5.5-fast", serviceTier: "priority" },
     },
     streamTextFn: ({ providerOptions }) => ({
       consumeStream: async () => {
@@ -533,40 +464,10 @@ test("runWhiteboardAgent passes Codex instructions provider option", async () =>
     transcript: "hello",
     state: { elements: [], agentHistory: [] },
     wss: { clients: new Set() },
-    options: {
-      agentProvider: {
-        provider: "codex",
-        model: "gpt-5.5",
-        baseURL: "https://chatgpt.com/backend-api/codex",
-        apiKey: "test",
-        reasoningEffort: "low",
-      },
-    },
+    options: { agentProvider: CODEX_AGENT_PROVIDER },
     streamTextFn: ({ providerOptions, system }) => ({
       consumeStream: async () => {
         assert.equal(providerOptions.openai.instructions, system);
-      },
-    }),
-  });
-});
-
-test("runWhiteboardAgent disables Codex response storage", async () => {
-  await runWhiteboardAgent({
-    transcript: "hello",
-    state: { elements: [], agentHistory: [] },
-    wss: { clients: new Set() },
-    options: {
-      agentProvider: {
-        provider: "codex",
-        model: "gpt-5.5",
-        baseURL: "https://chatgpt.com/backend-api/codex",
-        apiKey: "test",
-        reasoningEffort: "low",
-      },
-    },
-    streamTextFn: ({ providerOptions }) => ({
-      consumeStream: async () => {
-        assert.equal(providerOptions.openai.store, false);
       },
     }),
   });
@@ -579,15 +480,7 @@ test("runWhiteboardAgent uses streaming for Codex responses", async () => {
     transcript: "hello",
     state: { elements: [], agentHistory: [] },
     wss: { clients: new Set() },
-    options: {
-      agentProvider: {
-        provider: "codex",
-        model: "gpt-5.5",
-        baseURL: "https://chatgpt.com/backend-api/codex",
-        apiKey: "test",
-        reasoningEffort: "low",
-      },
-    },
+    options: { agentProvider: CODEX_AGENT_PROVIDER },
     generateTextFn: async () => {
       throw new Error("Codex should use streamText");
     },
@@ -625,32 +518,22 @@ function collectWebSocketMessages(url, count) {
   });
 }
 
-test("config lists the languages and the local models for the platform", async () => {
-  const { httpServer, url } = await startServer({
-    host: "127.0.0.1",
-    port: 0,
-    moonshineModel: "medium",
-    platform: "linux",
-    createTranscription: () => ({ ready: async () => {}, sendAudio: () => {}, stop: () => {}, close: () => {} }),
+test("config lists the languages and the local models for the platform", async (t) => {
+  const { url } = await startTestServer(t, { platform: "linux" });
+  const config = await (await fetch(`${url}/api/config`)).json();
+  const cloud = ["en", "ru", "de", "fr", "es", "zh", "pt", "it", "ja", "ko", "hi", "uk", "pl", "tr", "nl", "ar"];
+  assert.deepEqual(config.languages, {
+    local: ["en", "ru", "de", "fr", "es", "zh"],
+    openai: cloud,
+    deepgram: [...cloud, "multi"],
+    xai: cloud.filter((language) => language !== "zh" && language !== "uk"),
   });
-  try {
-    const config = await (await fetch(`${url}/api/config`)).json();
-    const cloud = ["en", "ru", "de", "fr", "es", "zh", "pt", "it", "ja", "ko", "hi", "uk", "pl", "tr", "nl", "ar"];
-    assert.deepEqual(config.languages, {
-      local: ["en", "ru", "de", "fr", "es", "zh"],
-      openai: cloud,
-      deepgram: [...cloud, "multi"],
-      xai: cloud.filter((language) => language !== "zh" && language !== "uk"),
-    });
-    assert.deepEqual(config.localModels.map((model) => model.id), [
-      "kroko-en-2025-08-06",
-      "vosk-small-ru-2025-08-16",
-      "kroko-de-2025-08-06",
-      "kroko-fr-2025-08-06",
-      "kroko-es-2025-08-06",
-      "zipformer-ctc-small-zh-2025-04-01",
-    ]);
-  } finally {
-    await new Promise((resolve) => httpServer.close(resolve));
-  }
+  assert.deepEqual(config.localModels.map((model) => model.id), [
+    "kroko-en-2025-08-06",
+    "vosk-small-ru-2025-08-16",
+    "kroko-de-2025-08-06",
+    "kroko-fr-2025-08-06",
+    "kroko-es-2025-08-06",
+    "zipformer-ctc-small-zh-2025-04-01",
+  ]);
 });

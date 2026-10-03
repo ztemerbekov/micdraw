@@ -6,8 +6,6 @@ import {
 import React from "react";
 import { createRoot } from "react-dom/client";
 
-import { STARTER_ELEMENTS } from "./starter-elements.js";
-
 const SAMPLE_RATE = 24000;
 // GPT-6.1 Sol takes low to max; it rejects "none".
 const REASONING_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
@@ -47,8 +45,9 @@ const XAI_MODEL_PLACEHOLDER = "e.g. grok-4.3";
 const XAI_TRANSCRIPTION_MODEL = "grok-voice-transcribe-2.0";
 const MIC_STORAGE_KEY = "micdraw.mic";
 const PANEL_HIDDEN_STORAGE_KEY = "micdraw.panelHidden";
-
-const STARTER_STAGING_ELEMENTS = [];
+// The live board recenters while it is this small: Start preso and Reset
+// session clear it, so its first elements land in view.
+const RECENTER_MAX_ELEMENTS = 4;
 
 function fullscreenIcon(isFullscreen) {
   const paths = isFullscreen
@@ -93,7 +92,6 @@ function loadStoredPanelHidden() {
 }
 
 function App() {
-  const [api, setApi] = React.useState(null);
   const [mode, setMode] = React.useState("staging");
   const [listening, setListening] = React.useState(false);
   const [starting, setStarting] = React.useState(false);
@@ -129,11 +127,10 @@ function App() {
   const apiRef = React.useRef(null);
   const wsRef = React.useRef(null);
   const modeRef = React.useRef("staging");
-  const stagingSceneRef = React.useRef(null);
+  const stagingSceneRef = React.useRef([]);
   const screenshotTimerRef = React.useRef(null);
   const captionTimerRef = React.useRef(null);
   const resetConfirmTimerRef = React.useRef(null);
-  const canvasWrapRef = React.useRef(null);
   const shellRef = React.useRef(null);
   const userElementsSyncTimerRef = React.useRef(null);
   const lastSyncedElementsHashRef = React.useRef("");
@@ -171,10 +168,6 @@ function App() {
       shellRef.current?.requestFullscreen?.();
     }
   }
-
-  React.useEffect(() => {
-    apiRef.current = api;
-  }, [api]);
 
   React.useEffect(() => {
     return () => {
@@ -298,22 +291,23 @@ function App() {
         }
       }
       if (message.type === "whiteboard:update") {
-        // Recenter when the live canvas resets to a fresh starter (Start preso, Reset session).
-        const isFreshStarter =
+        const isSmall =
           Array.isArray(message.elements) &&
-          message.elements.length <= STARTER_ELEMENTS.length + 1;
-        applyScene(message.elements, { recenter: isFreshStarter });
+          message.elements.length <= RECENTER_MAX_ELEMENTS;
+        applyScene(message.elements, { recenter: isSmall });
       }
       if (message.type === "whiteboard:viewport")
         applyWhiteboardViewportCommand(message);
       if (message.type === "error") {
         setError(message.message);
-        if (/agent/i.test(message.message)) setAgentError(true);
+        if (message.source === "agent") setAgentError(true);
         else setSttError(true);
       }
     });
 
     ws.addEventListener("close", () => {
+      // Nothing reconnects, so release the microphone too.
+      stopListening();
       setListening(false);
       setStarting(false);
       setAgentStatus("idle");
@@ -328,29 +322,6 @@ function App() {
       wsRef.current = null;
     };
   }, []);
-
-  // Seed the staging scene ref and the initial canvas once Excalidraw is ready.
-  React.useEffect(() => {
-    if (!api) return;
-    if (!stagingSceneRef.current) {
-      stagingSceneRef.current = convertToExcalidrawElements(
-        STARTER_STAGING_ELEMENTS,
-        { regenerateIds: false },
-      );
-    }
-    let cancelled = false;
-    const refresh = () => {
-      if (cancelled) return;
-      if (modeRef.current === "staging")
-        applyScene(stagingSceneRef.current, { recenter: true });
-    };
-    const timer = setTimeout(refresh, 750);
-    document.fonts?.ready.then(refresh).catch(() => {});
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [api]);
 
   React.useEffect(() => {
     fetch("/api/config")
@@ -550,12 +521,9 @@ function App() {
     setError("");
     try {
       if (modeRef.current === "staging") {
-        // Staging board lives on the client - just reload the starter content.
-        const fresh = convertToExcalidrawElements(STARTER_STAGING_ELEMENTS, {
-          regenerateIds: false,
-        });
-        stagingSceneRef.current = fresh;
-        applyScene(fresh);
+        // Staging board lives on the client - just clear it.
+        stagingSceneRef.current = [];
+        applyScene([]);
       } else {
         if (listening) await stopListening();
         clearTimeout(captionTimerRef.current);
@@ -665,8 +633,7 @@ function App() {
   async function captureCanvasDataUrl() {
     const canvas = document.querySelector("canvas.excalidraw__canvas.static");
     if (!canvas) return null;
-    const blob = await canvasToBlob(canvas);
-    const downscaled = await downscaleBlobByHalf(blob);
+    const downscaled = await downscaleByHalf(canvas);
     return await blobToDataUrl(downscaled);
   }
 
@@ -689,7 +656,7 @@ function App() {
         files,
         mimeType: "image/png",
       });
-      const downscaled = await downscaleBlobByHalf(blob);
+      const downscaled = await downscaleByHalf(blob);
       return await blobToDataUrl(downscaled);
     } catch (error) {
       console.warn(
@@ -699,6 +666,26 @@ function App() {
       return captureCanvasDataUrl();
     }
   }
+
+  // Excalidraw skips re-rendering while its props stay the same, so captions,
+  // cost and status updates leave the canvas alone. The callbacks only touch
+  // refs, so the first render's closures stay correct.
+  const excalidrawProps = React.useMemo(
+    () => ({
+      excalidrawAPI: (excalidrawAPI) => {
+        apiRef.current = excalidrawAPI;
+      },
+      initialData: {
+        elements: [],
+        appState: { viewBackgroundColor: "#fffdf8" },
+      },
+      onChange: handleExcalidrawChange,
+      onPointerDown: () => {
+        userTouchedCanvasRef.current = true;
+      },
+    }),
+    [],
+  );
 
   const isLive = mode === "live";
   const micState = micError ? "error" : listening ? "active" : "idle";
@@ -733,7 +720,7 @@ function App() {
     },
     React.createElement(
       "section",
-      { className: "canvas-wrap", ref: canvasWrapRef },
+      { className: "canvas-wrap" },
       React.createElement(
         "button",
         {
@@ -752,19 +739,7 @@ function App() {
           panelHidden ? "‹" : "›",
         ),
       ),
-      React.createElement(Excalidraw, {
-        excalidrawAPI: setApi,
-        initialData: {
-          elements: convertToExcalidrawElements(STARTER_STAGING_ELEMENTS, {
-            regenerateIds: false,
-          }),
-          appState: { viewBackgroundColor: "#fffdf8" },
-        },
-        onChange: handleExcalidrawChange,
-        onPointerDown: () => {
-          userTouchedCanvasRef.current = true;
-        },
-      }),
+      React.createElement(Excalidraw, excalidrawProps),
       React.createElement(
         "div",
         {
@@ -1060,6 +1035,7 @@ function Waveform({ analyser, active }) {
     let resizeObserver;
     let lastWidth = 0;
     let lastHeight = 0;
+    let gradient = null;
 
     const resize = () => {
       const rect = canvas.getBoundingClientRect();
@@ -1070,6 +1046,12 @@ function Waveform({ analyser, active }) {
       lastHeight = height;
       canvas.width = width * dpr;
       canvas.height = height * dpr;
+      gradient = ctx.createLinearGradient(0, 0, canvas.width, 0);
+      gradient.addColorStop(0, "rgba(56, 189, 248, 0)");
+      gradient.addColorStop(0.15, "rgba(56, 189, 248, 0.95)");
+      gradient.addColorStop(0.5, "rgba(168, 85, 247, 0.95)");
+      gradient.addColorStop(0.85, "rgba(56, 189, 248, 0.95)");
+      gradient.addColorStop(1, "rgba(56, 189, 248, 0)");
     };
 
     if (typeof ResizeObserver !== "undefined") {
@@ -1085,8 +1067,6 @@ function Waveform({ analyser, active }) {
       };
     }
 
-    analyser.fftSize = 1024;
-    analyser.smoothingTimeConstant = 0.85;
     const data = new Uint8Array(analyser.fftSize);
 
     const draw = () => {
@@ -1097,13 +1077,6 @@ function Waveform({ analyser, active }) {
 
       const mid = h / 2;
       const amplitude = mid * 0.85;
-
-      const gradient = ctx.createLinearGradient(0, 0, w, 0);
-      gradient.addColorStop(0, "rgba(56, 189, 248, 0)");
-      gradient.addColorStop(0.15, "rgba(56, 189, 248, 0.95)");
-      gradient.addColorStop(0.5, "rgba(168, 85, 247, 0.95)");
-      gradient.addColorStop(0.85, "rgba(56, 189, 248, 0.95)");
-      gradient.addColorStop(1, "rgba(56, 189, 248, 0)");
 
       ctx.shadowColor = "rgba(56, 189, 248, 0.55)";
       ctx.shadowBlur = 22 * dpr;
@@ -1224,7 +1197,6 @@ function costValue(entry) {
 
 function formatUsd(value) {
   if (typeof value !== "number" || !isFinite(value)) return "$0.0000";
-  if (value === 0) return "$0.0000";
   if (value < 0.01) return `$${value.toFixed(4)}`;
   return `$${value.toFixed(3)}`;
 }
@@ -1264,25 +1236,22 @@ function statusRow({
   onToggle,
   editor,
 }) {
-  const clickable = Boolean(onToggle);
   return React.createElement(
     "div",
     { className: `status-row-wrap ${expanded ? "expanded" : ""}` },
     React.createElement(
       "div",
       {
-        className: `status-row ${clickable ? "clickable" : ""} ${expanded ? "open" : ""}`,
-        onClick: clickable ? onToggle : undefined,
-        role: clickable ? "button" : undefined,
-        tabIndex: clickable ? 0 : undefined,
-        onKeyDown: clickable
-          ? (e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                onToggle();
-              }
-            }
-          : undefined,
+        className: `status-row ${expanded ? "open" : ""}`,
+        onClick: onToggle,
+        role: "button",
+        tabIndex: 0,
+        onKeyDown: (e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onToggle();
+          }
+        },
       },
       React.createElement("span", {
         className: `dot ${dotState}`,
@@ -1297,13 +1266,11 @@ function statusRow({
         },
         value,
       ),
-      clickable
-        ? React.createElement(
-            "span",
-            { className: "chevron", "aria-hidden": "true" },
-            "›",
-          )
-        : null,
+      React.createElement(
+        "span",
+        { className: "chevron", "aria-hidden": "true" },
+        "›",
+      ),
     ),
     expanded && editor
       ? React.createElement("div", { className: "editor" }, editor)
@@ -1346,6 +1313,11 @@ function sttModelLabel(settings, engineLabel) {
   return settings.transcription.openai.model;
 }
 
+async function listAudioInputs() {
+  const list = await navigator.mediaDevices.enumerateDevices();
+  return list.filter((d) => d.kind === "audioinput");
+}
+
 function MicEditor({ currentDeviceId, onSave, onCancel }) {
   const [devices, setDevices] = React.useState([]);
   const [selected, setSelected] = React.useState(currentDeviceId);
@@ -1357,8 +1329,7 @@ function MicEditor({ currentDeviceId, onSave, onCancel }) {
     let cancelled = false;
     (async () => {
       try {
-        const list = await navigator.mediaDevices.enumerateDevices();
-        const inputs = list.filter((d) => d.kind === "audioinput");
+        const inputs = await listAudioInputs();
         if (cancelled) return;
         setDevices(inputs);
         setNeedsPermission(inputs.length > 0 && inputs.every((d) => !d.label));
@@ -1377,9 +1348,7 @@ function MicEditor({ currentDeviceId, onSave, onCancel }) {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       stream.getTracks().forEach((track) => track.stop());
-      const list = await navigator.mediaDevices.enumerateDevices();
-      const inputs = list.filter((d) => d.kind === "audioinput");
-      setDevices(inputs);
+      setDevices(await listAudioInputs());
       setNeedsPermission(false);
     } catch (err) {
       setErrorText(err.message);
@@ -1432,23 +1401,7 @@ function MicEditor({ currentDeviceId, onSave, onCancel }) {
         ),
       ),
     ),
-    errorText
-      ? React.createElement("div", { className: "editor-error" }, errorText)
-      : null,
-    React.createElement(
-      "div",
-      { className: "editor-actions" },
-      React.createElement(
-        "button",
-        { className: "secondary", onClick: onCancel, disabled: busy },
-        "Cancel",
-      ),
-      React.createElement(
-        "button",
-        { onClick: submit, disabled: busy },
-        "Save",
-      ),
-    ),
+    editorFooter({ errorText, busy, onCancel, onSave: submit, saveLabel: "Save" }),
   );
 }
 
@@ -1554,78 +1507,34 @@ function AgentEditor({ settings, onSave, onCancel }) {
       ),
     ),
     provider === "xai"
-      ? field(
-          "Model",
-          React.createElement("input", {
-            type: "text",
-            value: xaiModel,
-            onChange: (e) => setXaiModel(e.target.value),
-            placeholder: XAI_MODEL_PLACEHOLDER,
-            disabled: busy,
-          }),
-        )
+      ? textField("Model", xaiModel, setXaiModel, busy, XAI_MODEL_PLACEHOLDER)
       : null,
     provider === "xai"
-      ? field(
-          "API key",
-          React.createElement("input", {
-            type: "password",
-            value: xaiKey,
-            onChange: (e) => setXaiKey(e.target.value),
-            placeholder: settings.hasXaiKey
-              ? "configured (enter to replace)"
-              : "xai-...",
-            disabled: busy,
-          }),
-        )
+      ? keyField(xaiKey, setXaiKey, settings.hasXaiKey, "xai-...", busy)
       : null,
     provider === "xai"
-      ? field(
-          "Base URL",
-          React.createElement("input", {
-            type: "text",
-            value: xaiBaseURL,
-            onChange: (e) => setXaiBaseURL(e.target.value),
-            disabled: busy,
-          }),
-        )
+      ? textField("Base URL", xaiBaseURL, setXaiBaseURL, busy)
       : null,
     provider === "openrouter"
-      ? field(
+      ? textField(
           "Model",
-          React.createElement("input", {
-            type: "text",
-            value: openrouterModel,
-            onChange: (e) => setOpenrouterModel(e.target.value),
-            placeholder: OPENROUTER_MODEL_PLACEHOLDER,
-            disabled: busy,
-          }),
+          openrouterModel,
+          setOpenrouterModel,
+          busy,
+          OPENROUTER_MODEL_PLACEHOLDER,
         )
       : null,
     provider === "openrouter"
-      ? field(
-          "API key",
-          React.createElement("input", {
-            type: "password",
-            value: openrouterKey,
-            onChange: (e) => setOpenrouterKey(e.target.value),
-            placeholder: settings.hasOpenRouterKey
-              ? "configured (enter to replace)"
-              : "sk-or-...",
-            disabled: busy,
-          }),
+      ? keyField(
+          openrouterKey,
+          setOpenrouterKey,
+          settings.hasOpenRouterKey,
+          "sk-or-...",
+          busy,
         )
       : null,
     provider === "openrouter"
-      ? field(
-          "Base URL",
-          React.createElement("input", {
-            type: "text",
-            value: openrouterBaseURL,
-            onChange: (e) => setOpenrouterBaseURL(e.target.value),
-            disabled: busy,
-          }),
-        )
+      ? textField("Base URL", openrouterBaseURL, setOpenrouterBaseURL, busy)
       : null,
     provider === "openai"
       ? field(
@@ -1662,83 +1571,24 @@ function AgentEditor({ settings, onSave, onCancel }) {
         )
       : null,
     provider === "ollama"
-      ? field(
-          "Model",
-          React.createElement("input", {
-            type: "text",
-            value: ollamaModel,
-            onChange: (e) => setOllamaModel(e.target.value),
-            placeholder: "e.g. qwen3.6",
-            disabled: busy,
-          }),
-        )
+      ? textField("Model", ollamaModel, setOllamaModel, busy, "e.g. qwen3.6")
       : null,
     provider === "ollama"
-      ? field(
-          "Base URL",
-          React.createElement("input", {
-            type: "text",
-            value: ollamaBaseURL,
-            onChange: (e) => setOllamaBaseURL(e.target.value),
-            disabled: busy,
-          }),
-        )
-      : null,
-    needsOpenAIKey
-      ? field(
-          "API key",
-          React.createElement("input", {
-            type: "password",
-            value: openaiKey,
-            onChange: (e) => setOpenaiKey(e.target.value),
-            placeholder: "sk-...",
-            disabled: busy,
-          }),
-        )
-      : null,
-    provider === "openai" && settings.hasOpenAIKey
-      ? field(
-          "API key",
-          React.createElement("input", {
-            type: "password",
-            value: openaiKey,
-            onChange: (e) => setOpenaiKey(e.target.value),
-            placeholder: "configured (enter to replace)",
-            disabled: busy,
-          }),
-        )
+      ? textField("Base URL", ollamaBaseURL, setOllamaBaseURL, busy)
       : null,
     provider === "openai"
-      ? field(
-          "Base URL",
-          React.createElement("input", {
-            type: "text",
-            value: openaiBaseURL,
-            onChange: (e) => setOpenaiBaseURL(e.target.value),
-            disabled: busy,
-          }),
-        )
+      ? keyField(openaiKey, setOpenaiKey, settings.hasOpenAIKey, "sk-...", busy)
       : null,
-    errorText
-      ? React.createElement("div", { className: "editor-error" }, errorText)
+    provider === "openai"
+      ? textField("Base URL", openaiBaseURL, setOpenaiBaseURL, busy)
       : null,
-    React.createElement(
-      "div",
-      { className: "editor-actions" },
-      React.createElement(
-        "button",
-        { className: "secondary", onClick: onCancel, disabled: busy },
-        "Cancel",
-      ),
-      React.createElement(
-        "button",
-        {
-          onClick: submit,
-          disabled: busy || needsOpenAIKey || needsOpenRouterKey || needsXaiKey,
-        },
-        busy ? "Saving..." : "Save",
-      ),
-    ),
+    editorFooter({
+      errorText,
+      busy,
+      onCancel,
+      onSave: submit,
+      saveDisabled: needsOpenAIKey || needsOpenRouterKey || needsXaiKey,
+    }),
   );
 }
 
@@ -1779,11 +1629,11 @@ function TranscriptionEditor({
     setLanguage(next);
     setLocalModelId(savedLocalModel(next));
   }
-  const providerLanguages = languages[provider === "moonshine" ? "local" : provider] ?? ["en"];
+  const providerLanguages = languages[provider] ?? ["en"];
   // A language the new provider does not offer falls back to its first one.
   function chooseProvider(next) {
     setProvider(next);
-    const offered = languages[next === "moonshine" ? "local" : next] ?? ["en"];
+    const offered = languages[next] ?? ["en"];
     if (!offered.includes(language)) chooseLanguage(offered[0]);
   }
   const [openaiModel, setOpenaiModel] = React.useState(
@@ -1863,18 +1713,7 @@ function TranscriptionEditor({
       ),
     ),
     provider === "xai"
-      ? field(
-          "API key",
-          React.createElement("input", {
-            type: "password",
-            value: xaiKey,
-            onChange: (e) => setXaiKey(e.target.value),
-            placeholder: settings.hasXaiKey
-              ? "configured (enter to replace)"
-              : "xai-...",
-            disabled: busy,
-          }),
-        )
+      ? keyField(xaiKey, setXaiKey, settings.hasXaiKey, "xai-...", busy)
       : null,
     provider === "deepgram"
       ? field(
@@ -1888,29 +1727,21 @@ function TranscriptionEditor({
         )
       : null,
     provider === "deepgram"
-      ? field(
-          "API key",
-          React.createElement("input", {
-            type: "password",
-            value: deepgramKey,
-            onChange: (e) => setDeepgramKey(e.target.value),
-            placeholder: settings.hasDeepgramKey
-              ? "configured (enter to replace)"
-              : "Deepgram API key",
-            disabled: busy,
-          }),
+      ? keyField(
+          deepgramKey,
+          setDeepgramKey,
+          settings.hasDeepgramKey,
+          "Deepgram API key",
+          busy,
         )
       : null,
     provider === "deepgram"
-      ? field(
+      ? textField(
           "Key terms",
-          React.createElement("input", {
-            type: "text",
-            value: deepgramKeyterms,
-            onChange: (e) => setDeepgramKeyterms(e.target.value),
-            placeholder: "comma-separated, e.g. Kubernetes, gRPC",
-            disabled: busy,
-          }),
+          deepgramKeyterms,
+          setDeepgramKeyterms,
+          busy,
+          "comma-separated, e.g. Kubernetes, gRPC",
         )
       : null,
     field(
@@ -1950,30 +1781,67 @@ function TranscriptionEditor({
           ),
         )
       : null,
-    needsOpenAIKey
-      ? field(
-          "API key",
-          React.createElement("input", {
-            type: "password",
-            value: openaiKey,
-            onChange: (e) => setOpenaiKey(e.target.value),
-            placeholder: "sk-...",
-            disabled: busy,
-          }),
-        )
+    provider === "openai"
+      ? keyField(openaiKey, setOpenaiKey, settings.hasOpenAIKey, "sk-...", busy)
       : null,
-    provider === "openai" && settings.hasOpenAIKey
-      ? field(
-          "API key",
-          React.createElement("input", {
-            type: "password",
-            value: openaiKey,
-            onChange: (e) => setOpenaiKey(e.target.value),
-            placeholder: "configured (enter to replace)",
-            disabled: busy,
-          }),
-        )
-      : null,
+    editorFooter({
+      errorText,
+      busy,
+      onCancel,
+      onSave: submit,
+      saveDisabled: needsOpenAIKey || needsDeepgramKey || needsXaiKey,
+    }),
+  );
+}
+
+function field(label, control) {
+  return React.createElement(
+    "label",
+    { className: "field" },
+    React.createElement("span", { className: "field-label" }, label),
+    control,
+  );
+}
+
+function textField(label, value, onChange, disabled, placeholder = undefined) {
+  return field(
+    label,
+    React.createElement("input", {
+      type: "text",
+      value,
+      onChange: (e) => onChange(e.target.value),
+      placeholder,
+      disabled,
+    }),
+  );
+}
+
+// The page never sees a saved key, only whether there is one. A typed key
+// replaces it; a blank field keeps it.
+function keyField(value, onChange, configured, placeholder, disabled) {
+  return field(
+    "API key",
+    React.createElement("input", {
+      type: "password",
+      value,
+      onChange: (e) => onChange(e.target.value),
+      placeholder: configured ? "configured (enter to replace)" : placeholder,
+      disabled,
+    }),
+  );
+}
+
+function editorFooter({
+  errorText,
+  busy,
+  onCancel,
+  onSave,
+  saveDisabled = false,
+  saveLabel = busy ? "Saving..." : "Save",
+}) {
+  return React.createElement(
+    React.Fragment,
+    null,
     errorText
       ? React.createElement("div", { className: "editor-error" }, errorText)
       : null,
@@ -1987,22 +1855,10 @@ function TranscriptionEditor({
       ),
       React.createElement(
         "button",
-        {
-          onClick: submit,
-          disabled: busy || needsOpenAIKey || needsDeepgramKey || needsXaiKey,
-        },
-        busy ? "Saving..." : "Save",
+        { onClick: onSave, disabled: busy || saveDisabled },
+        saveLabel,
       ),
     ),
-  );
-}
-
-function field(label, control) {
-  return React.createElement(
-    "label",
-    { className: "field" },
-    React.createElement("span", { className: "field-label" }, label),
-    control,
   );
 }
 
@@ -2030,12 +1886,11 @@ function select(value, onChange, options, disabled) {
   // Keep a saved value that is not in the menu (an older model, say) visible
   // and selected instead of silently showing the first option.
   const shown = value && !options.includes(value) ? [value, ...options] : options;
-  return React.createElement(
-    "select",
-    { value, onChange: (e) => onChange(e.target.value), disabled },
-    shown.map((option) =>
-      React.createElement("option", { key: option, value: option }, option),
-    ),
+  return labeledSelect(
+    value,
+    onChange,
+    shown.map((option) => ({ value: option, label: option })),
+    disabled,
   );
 }
 
@@ -2197,10 +2052,11 @@ function canvasToBlob(canvas) {
 
 // Halve each dimension before sending to the agent. ~4x fewer pixels means
 // ~4x fewer image tokens and a smaller WS payload, while shapes and labels
-// stay legible enough for the model to do visual sanity checks.
-async function downscaleBlobByHalf(blob) {
+// stay legible enough for the model to do visual sanity checks. `source` is
+// a PNG blob or a canvas, which is read directly instead of encoded twice.
+async function downscaleByHalf(source) {
   try {
-    const bitmap = await createImageBitmap(blob);
+    const bitmap = await createImageBitmap(source);
     const w = Math.max(1, Math.floor(bitmap.width / 2));
     const h = Math.max(1, Math.floor(bitmap.height / 2));
     const canvas = document.createElement("canvas");
@@ -2214,7 +2070,7 @@ async function downscaleBlobByHalf(blob) {
     return await canvasToBlob(canvas);
   } catch (error) {
     console.warn("Image downscale failed, sending original:", error);
-    return blob;
+    return source instanceof Blob ? source : canvasToBlob(source);
   }
 }
 

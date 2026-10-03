@@ -3,13 +3,12 @@ import { test } from "node:test";
 
 import { createTranscriptTurnQueue } from "../src/transcript-turn-queue.js";
 
-test("queue with debounce 0 sends a transcript immediately", async () => {
+test("queue sends a transcript immediately", async () => {
   const turns = [];
   const queue = createTranscriptTurnQueue({
     runTurn: async (text) => {
       turns.push(text);
     },
-    debounceMs: 0,
   });
 
   await queue.enqueue("first point");
@@ -18,53 +17,18 @@ test("queue with debounce 0 sends a transcript immediately", async () => {
   assert.deepEqual(turns, ["first point"]);
 });
 
-test("queue waits for idle to flush even when debounce is set", async () => {
-  const turns = [];
-  const queue = createTranscriptTurnQueue({
-    runTurn: async (text) => {
-      turns.push(text);
-    },
-    debounceMs: 150,
-  });
-
-  queue.enqueue("first point");
-  await queue.idle();
-
-  assert.deepEqual(turns, ["first point"]);
-});
-
-test("queue debounces consecutive chunks into one turn when agent is idle", async () => {
-  const turns = [];
-  const queue = createTranscriptTurnQueue({
-    runTurn: async (text) => {
-      turns.push(text);
-    },
-    debounceMs: 50,
-  });
-
-  // Three chunks arriving in a burst should batch into one turn.
-  queue.enqueue("first");
-  queue.enqueue("second");
-  queue.enqueue("third");
-  await queue.idle();
-
-  assert.deepEqual(turns, ["first\nsecond\nthird"]);
-});
-
 test("queue keeps accumulating when isReady says the buffer isn't substantive yet", async () => {
   const turns = [];
   const queue = createTranscriptTurnQueue({
     runTurn: async (text) => {
       turns.push(text);
     },
-    debounceMs: 30,
     isReady: (text) => /[a-zA-Z]{4,}/.test(text), // need at least one 4+ letter word
   });
 
   queue.enqueue("uh");
   queue.enqueue("um");
-  // Only fillers - debounce fires but isReady returns false, so nothing fires.
-  await new Promise((resolve) => setTimeout(resolve, 80));
+  // Only fillers - isReady returns false, so nothing fires.
   assert.deepEqual(turns, []);
 
   queue.enqueue("OpenAI just released a new model");
@@ -80,7 +44,6 @@ test("queue idle() force-flushes a not-ready buffer so it always terminates", as
     runTurn: async (text) => {
       turns.push(text);
     },
-    debounceMs: 30,
     isReady: () => false, // never ready
   });
 
@@ -106,7 +69,6 @@ test("queue buffers chunks that arrive during a running turn into one follow-up 
         await firstTurnDone;
       }
     },
-    debounceMs: 0, // disable debounce so "first" fires immediately
   });
 
   queue.enqueue("first");

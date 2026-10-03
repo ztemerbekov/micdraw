@@ -4,7 +4,7 @@ Guidance for coding agents in this repo. The README owns user-facing behavior, C
 
 ## Naming
 
-- The display name is **Mic Draw**: the UI, page title, starter canvas, agent persona, README prose and license holder. Anything people type or code parses uses **micdraw**: the npm package and command, the repository, `~/.config/micdraw`, `MICDRAW_*` env vars, storage keys and log tags.
+- The display name is **Mic Draw**: the UI, page title, agent persona, README prose and license holder. Anything people type or code parses uses **micdraw**: the npm package and command, the repository, `~/.config/micdraw`, `MICDRAW_*` env vars, storage keys and log tags.
 
 ## Commands and CI
 
@@ -29,6 +29,7 @@ Guidance for coding agents in this repo. The README owns user-facing behavior, C
 ## Testing
 
 - `node:test` + `node:assert/strict` with hand-rolled mocks in `test/*.test.js`. For server tests, inject fakes (`generateTextFn`, `streamTextFn`, `createTranscription`) through `startServer({...})` instead of touching the network.
+- Shared fakes and helpers live in `test/helpers/`. `npm test` runs only `test/**/*.test.js`, so `node --test` with no file argument would also run the helpers as empty tests.
 - Use TDD for bug fixes and features: write the failing test first.
 
 ## Releases

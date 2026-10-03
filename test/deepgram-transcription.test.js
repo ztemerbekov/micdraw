@@ -1,6 +1,5 @@
 // @ts-nocheck - hand-rolled EventEmitter is used as a fake WebSocket; structural types fight here.
 import assert from "node:assert/strict";
-import { EventEmitter } from "node:events";
 import { test } from "node:test";
 
 import {
@@ -9,71 +8,7 @@ import {
   mergeKeyterms,
   parseDeepgramMessage,
 } from "../src/deepgram-transcription.js";
-
-function createMockSocket() {
-  const socket = new EventEmitter();
-  socket.sent = [];
-  socket.binary = [];
-  socket.closed = false;
-  socket.send = (data) => {
-    if (typeof data === "string") socket.sent.push(data);
-    else if (Buffer.isBuffer(data)) socket.binary.push(data);
-    else socket.sent.push(String(data));
-  };
-  socket.close = () => {
-    socket.closed = true;
-    socket.emit("close");
-  };
-  return socket;
-}
-
-/**
- * Deterministic stand-ins for the timer functions the provider takes as
- * dependencies. Node's own fake timers do not reach a module that captured
- * setTimeout at construction, so the provider accepts them explicitly.
- */
-function createFakeClock() {
-  let now = 0;
-  let nextId = 1;
-  const timers = new Map();
-  return {
-    setTimeoutFn: (fn, ms) => {
-      const id = nextId++;
-      timers.set(id, { fn, at: now + ms, repeat: null });
-      return id;
-    },
-    clearTimeoutFn: (id) => timers.delete(id),
-    setIntervalFn: (fn, ms) => {
-      const id = nextId++;
-      timers.set(id, { fn, at: now + ms, repeat: ms });
-      return id;
-    },
-    clearIntervalFn: (id) => timers.delete(id),
-    advance(ms) {
-      const target = now + ms;
-      // Fire in time order, re-arming repeats, until nothing is due.
-      for (;;) {
-        let due = null;
-        let dueId = null;
-        for (const [id, timer] of timers) {
-          if (timer.at <= target && (due === null || timer.at < due.at)) {
-            due = timer;
-            dueId = id;
-          }
-        }
-        if (!due) break;
-        now = due.at;
-        if (due.repeat === null) timers.delete(dueId);
-        else due.at = now + due.repeat;
-        due.fn();
-      }
-      now = target;
-    },
-    get pending() {
-      return timers.size;
-    },
-  };
-}
+import { createFakeClock, createMockSocket } from "./helpers/fakes.js";
 
 function setup({ options = {}, env = { DEEPGRAM_API_KEY: "dg-test" } } = {}) {
   const socket = createMockSocket();

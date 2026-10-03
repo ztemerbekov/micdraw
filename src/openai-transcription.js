@@ -57,6 +57,8 @@ export function createOpenAITranscription({
   env = process.env,
   createWebSocket = (url, protocols, init) => new WebSocket(url, protocols, init),
   log = console,
+  setTimeoutFn = setTimeout,
+  clearTimeoutFn = clearTimeout,
 }) {
   let socket = null;
   let readyPromise = null;
@@ -69,13 +71,10 @@ export function createOpenAITranscription({
   let vocabularyPrompt = "";
   let deltaQuietTimer = null;
   let lastQueuedTranscript = "";
-  const deltaQuietMs = Number.isFinite(options.openaiDeltaQuietMs)
-    ? options.openaiDeltaQuietMs
-    : DEFAULT_DELTA_QUIET_MS;
 
   function cancelDeltaQuietTimer() {
     if (deltaQuietTimer) {
-      clearTimeout(deltaQuietTimer);
+      clearTimeoutFn(deltaQuietTimer);
       deltaQuietTimer = null;
     }
   }
@@ -93,19 +92,21 @@ export function createOpenAITranscription({
     // Commit OpenAI's audio buffer so the next utterance's deltas start
     // from a clean state (otherwise the buffer would grow without bound and
     // delta semantics could drift).
-    if (socket && configured && bufferedSinceCommit) {
-      socket.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
-      bufferedSinceCommit = false;
-    }
+    commitAudioBuffer();
+  }
+
+  function commitAudioBuffer() {
+    if (!socket || !configured || !bufferedSinceCommit) return;
+    socket.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
+    bufferedSinceCommit = false;
   }
 
   function scheduleDeltaQuietFlush() {
     cancelDeltaQuietTimer();
-    if (deltaQuietMs <= 0) return;
-    deltaQuietTimer = setTimeout(() => {
+    deltaQuietTimer = setTimeoutFn(() => {
       deltaQuietTimer = null;
       flushPartialAsTurn();
-    }, deltaQuietMs);
+    }, DEFAULT_DELTA_QUIET_MS);
   }
 
   function ensureSocket() {
@@ -139,31 +140,7 @@ export function createOpenAITranscription({
       pendingAudio = [];
     });
 
-    socket.on("message", (raw) => {
-      handleSocketMessage(raw.toString("utf8"), {
-        sendTranscript,
-        getPartial: () => partialText,
-        setPartial: (value) => { partialText = value; },
-        onReady: () => resolveReady?.(),
-        onBufferDrained: () => {
-          bufferedSinceCommit = false;
-        },
-        onDelta: () => {
-          // Re-arm the quiet timer on every delta. When deltas stop arriving
-          // for deltaQuietMs, flushPartialAsTurn fires and the agent runs.
-          if (partialText) scheduleDeltaQuietFlush();
-        },
-        onCompleted: (fallbackText) => {
-          // Fallback: if our quiet timer hasn't fired yet (e.g., user clicked
-          // Stop and the server's manual commit produced a completed event
-          // before deltaQuietMs elapsed), drain whatever partial we still
-          // have. flushPartialAsTurn is idempotent.
-          const text = fallbackText?.trim();
-          if (!partialText.trim() && text && text !== lastQueuedTranscript) partialText = text;
-          flushPartialAsTurn();
-        },
-      });
-    });
+    socket.on("message", (raw) => handleFrame(raw.toString("utf8")));
 
     socket.on("error", (error) => {
       sendTranscript({ type: "error", message: error.message });
@@ -185,6 +162,66 @@ export function createOpenAITranscription({
     });
 
     return socket;
+  }
+
+  function handleFrame(line) {
+    if (!line.trim()) return;
+
+    let message;
+    try {
+      message = JSON.parse(line);
+    } catch {
+      sendTranscript({ type: "error", message: `Invalid OpenAI realtime message: ${line}` });
+      return;
+    }
+
+    if (
+      message.type === "transcription_session.created" ||
+      message.type === "transcription_session.updated" ||
+      message.type === "session.created" ||
+      message.type === "session.updated"
+    ) {
+      resolveReady?.();
+      return;
+    }
+
+    if (message.type === "conversation.item.input_audio_transcription.delta") {
+      partialText += message.delta ?? "";
+      sendTranscript({ type: "transcript:partial", text: partialText });
+      // Re-arm the quiet timer on every delta. When deltas stop arriving
+      // for DEFAULT_DELTA_QUIET_MS, flushPartialAsTurn fires and the agent runs.
+      if (partialText) scheduleDeltaQuietFlush();
+      return;
+    }
+
+    if (message.type === "conversation.item.input_audio_transcription.completed") {
+      // We do NOT use completed to drive agent turns - delta-quiet does that.
+      // completed is a fallback for the rare case where deltas stopped without
+      // our quiet timer having fired (e.g., user clicked Stop and the server's
+      // manual commit produced a completed event before DEFAULT_DELTA_QUIET_MS elapsed):
+      // drain whatever partial we still have. flushPartialAsTurn is idempotent.
+      bufferedSinceCommit = false;
+      const text = message.transcript?.trim();
+      if (!partialText.trim() && text && text !== lastQueuedTranscript) partialText = text;
+      flushPartialAsTurn();
+      return;
+    }
+
+    // Server VAD commits the buffer well before transcription completes, and
+    // discards silent audio outright. Track the actual buffer state from this
+    // signal so a later stop() doesn't try to commit an empty buffer.
+    if (message.type === "input_audio_buffer.committed") {
+      bufferedSinceCommit = false;
+      return;
+    }
+
+    if (message.type === "error") {
+      // input_audio_buffer_commit_empty is a benign race: server VAD already
+      // drained (or discarded silent audio) before our manual commit landed.
+      // Don't surface it to the UI.
+      if (message.error?.code === "input_audio_buffer_commit_empty") return;
+      sendTranscript({ type: "error", message: message.error?.message ?? "OpenAI realtime error" });
+    }
   }
 
   return {
@@ -242,10 +279,7 @@ export function createOpenAITranscription({
       // queued NOW. Flush any pending partial as a turn (idempotent), and
       // make sure the OpenAI buffer is committed if we still hold audio.
       flushPartialAsTurn();
-      if (!socket || !configured) return;
-      if (!bufferedSinceCommit) return;
-      socket.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
-      bufferedSinceCommit = false;
+      commitAudioBuffer();
     },
     close: () => {
       cancelDeltaQuietTimer();
@@ -254,60 +288,4 @@ export function createOpenAITranscription({
       socket = null;
     },
   };
-}
-
-function handleSocketMessage(line, { sendTranscript, getPartial, setPartial, onReady, onBufferDrained, onDelta, onCompleted }) {
-  if (!line.trim()) return;
-
-  let message;
-  try {
-    message = JSON.parse(line);
-  } catch {
-    sendTranscript({ type: "error", message: `Invalid OpenAI realtime message: ${line}` });
-    return;
-  }
-
-  if (
-    message.type === "transcription_session.created" ||
-    message.type === "transcription_session.updated" ||
-    message.type === "session.created" ||
-    message.type === "session.updated"
-  ) {
-    onReady?.();
-    return;
-  }
-
-  if (message.type === "conversation.item.input_audio_transcription.delta") {
-    const next = getPartial() + (message.delta ?? "");
-    setPartial(next);
-    sendTranscript({ type: "transcript:partial", text: next });
-    onDelta?.();
-    return;
-  }
-
-  if (message.type === "conversation.item.input_audio_transcription.completed") {
-    // We do NOT use completed to drive agent turns - delta-quiet does that.
-    // completed is a fallback for the rare case where deltas stopped without
-    // our quiet timer having fired (e.g., Stop click). Pass to onCompleted
-    // which calls flushPartialAsTurn (idempotent).
-    onBufferDrained?.();
-    onCompleted?.(message.transcript);
-    return;
-  }
-
-  // Server VAD commits the buffer well before transcription completes, and
-  // discards silent audio outright. Track the actual buffer state from this
-  // signal so a later stop() doesn't try to commit an empty buffer.
-  if (message.type === "input_audio_buffer.committed") {
-    onBufferDrained?.();
-    return;
-  }
-
-  if (message.type === "error") {
-    // input_audio_buffer_commit_empty is a benign race: server VAD already
-    // drained (or discarded silent audio) before our manual commit landed.
-    // Don't surface it to the UI.
-    if (message.error?.code === "input_audio_buffer_commit_empty") return;
-    sendTranscript({ type: "error", message: message.error?.message ?? "OpenAI realtime error" });
-  }
 }

@@ -14,7 +14,7 @@ For anything bigger than a small fix, open an issue first so we can agree on the
 ## Repo conventions
 
 - Node 24+, plain JavaScript, ESM-only. See `AGENTS.md` for agent instructions and architecture notes.
-- Tests live under `test/*.test.js` and run with `node --test`.
+- Tests live under `test/*.test.js` and run with `npm test`; shared helpers live in `test/helpers/`.
 - Add user-facing changes to `## Unreleased` in `CHANGELOG.md`; that section becomes the release notes.
 - Local Moonshine sidecar binaries under `packages/*/bin/` are generated artifacts (built by `npm run build:moonshine-sidecars` on macOS). Don't check them in.
 

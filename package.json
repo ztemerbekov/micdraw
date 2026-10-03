@@ -39,7 +39,7 @@
   "scripts": {
     "build:moonshine-sidecars": "node ./scripts/build-moonshine-sidecars.js",
     "dev": "node ./src/cli.js",
-    "test": "node --test",
+    "test": "node --test \"test/**/*.test.js\"",
     "start": "node ./src/cli.js",
     "typecheck": "tsc --noEmit"
   },

@@ -1,23 +1,12 @@
 // @ts-nocheck - hand-rolled EventEmitter is used as a fake WebSocket; structural types fight here.
 import assert from "node:assert/strict";
-import { EventEmitter } from "node:events";
 import { test } from "node:test";
 
 import { createOpenAITranscription } from "../src/openai-transcription.js";
+import { createFakeClock, createMockSocket } from "./helpers/fakes.js";
 
-function createMockSocket() {
-  const socket = new EventEmitter();
-  socket.sent = [];
-  socket.closed = false;
-  socket.send = (data) => {
-    socket.sent.push(typeof data === "string" ? data : data.toString("utf8"));
-  };
-  socket.close = () => {
-    socket.closed = true;
-    socket.emit("close");
-  };
-  return socket;
-}
+// The engine queues a turn once deltas stop for this long.
+const DELTA_QUIET_MS = 1000;
 
 test("createOpenAITranscription opens a transcription session with bearer auth", () => {
   const calls = [];
@@ -396,12 +385,15 @@ test("delta-quiet window queues the accumulated partial text as one turn", async
   // queue it. We do NOT wait for transcription.completed.
   const queued = [];
   const socket = createMockSocket();
+  const clock = createFakeClock();
   const transcription = createOpenAITranscription({
     sendTranscript: () => {},
     queueTranscript: (text) => queued.push(text),
-    options: { openaiTranscriptionModel: "gpt-realtime-whisper", openaiDeltaQuietMs: 60 },
+    options: { openaiTranscriptionModel: "gpt-realtime-whisper" },
     env: { OPENAI_API_KEY: "sk-test" },
     createWebSocket: () => socket,
+    setTimeoutFn: clock.setTimeoutFn,
+    clearTimeoutFn: clock.clearTimeoutFn,
   });
 
   transcription.sendAudio("frame");
@@ -414,23 +406,26 @@ test("delta-quiet window queues the accumulated partial text as one turn", async
   socket.emit("message", JSON.stringify({ type: "conversation.item.input_audio_transcription.delta", delta: "world" }));
 
   // Within the quiet window: nothing queued yet.
-  await new Promise((resolve) => setTimeout(resolve, 30));
+  clock.advance(DELTA_QUIET_MS - 1);
   assert.deepEqual(queued, []);
 
   // After the quiet window: the full accumulated partial fires as one turn.
-  await new Promise((resolve) => setTimeout(resolve, 100));
+  clock.advance(1);
   assert.deepEqual(queued, ["hello world"]);
 });
 
 test("delta-quiet timer resets on every new delta", async () => {
   const queued = [];
   const socket = createMockSocket();
+  const clock = createFakeClock();
   const transcription = createOpenAITranscription({
     sendTranscript: () => {},
     queueTranscript: (text) => queued.push(text),
-    options: { openaiTranscriptionModel: "gpt-realtime-whisper", openaiDeltaQuietMs: 80 },
+    options: { openaiTranscriptionModel: "gpt-realtime-whisper" },
     env: { OPENAI_API_KEY: "sk-test" },
     createWebSocket: () => socket,
+    setTimeoutFn: clock.setTimeoutFn,
+    clearTimeoutFn: clock.clearTimeoutFn,
   });
 
   transcription.sendAudio("frame");
@@ -439,24 +434,27 @@ test("delta-quiet timer resets on every new delta", async () => {
   await transcription.ready();
 
   socket.emit("message", JSON.stringify({ type: "conversation.item.input_audio_transcription.delta", delta: "a" }));
-  await new Promise((resolve) => setTimeout(resolve, 50));
+  clock.advance(DELTA_QUIET_MS - 1);
   socket.emit("message", JSON.stringify({ type: "conversation.item.input_audio_transcription.delta", delta: "b" }));
-  await new Promise((resolve) => setTimeout(resolve, 50));
-  // Two 50ms gaps but each new delta resets the timer; nothing queued yet.
+  clock.advance(DELTA_QUIET_MS - 1);
+  // Two gaps of almost the window, but each new delta resets the timer.
   assert.deepEqual(queued, []);
 
-  await new Promise((resolve) => setTimeout(resolve, 100));
+  clock.advance(1);
   assert.deepEqual(queued, ["ab"]);
 });
 
 test("delta-quiet flush also commits OpenAI's audio buffer for state hygiene", async () => {
   const socket = createMockSocket();
+  const clock = createFakeClock();
   const transcription = createOpenAITranscription({
     sendTranscript: () => {},
     queueTranscript: () => {},
-    options: { openaiTranscriptionModel: "gpt-realtime-whisper", openaiDeltaQuietMs: 50 },
+    options: { openaiTranscriptionModel: "gpt-realtime-whisper" },
     env: { OPENAI_API_KEY: "sk-test" },
     createWebSocket: () => socket,
+    setTimeoutFn: clock.setTimeoutFn,
+    clearTimeoutFn: clock.clearTimeoutFn,
   });
 
   transcription.sendAudio("frame");
@@ -466,7 +464,7 @@ test("delta-quiet flush also commits OpenAI's audio buffer for state hygiene", a
   socket.sent.length = 0;
 
   socket.emit("message", JSON.stringify({ type: "conversation.item.input_audio_transcription.delta", delta: "hello" }));
-  await new Promise((resolve) => setTimeout(resolve, 100));
+  clock.advance(DELTA_QUIET_MS);
 
   const commits = socket.sent.filter((line) => line.includes("input_audio_buffer.commit"));
   assert.equal(commits.length, 1, "delta-quiet flush should also commit the OpenAI buffer");
@@ -475,12 +473,15 @@ test("delta-quiet flush also commits OpenAI's audio buffer for state hygiene", a
 test("transcription.completed is idempotent if delta-quiet already flushed the partial", async () => {
   const queued = [];
   const socket = createMockSocket();
+  const clock = createFakeClock();
   const transcription = createOpenAITranscription({
     sendTranscript: () => {},
     queueTranscript: (text) => queued.push(text),
-    options: { openaiTranscriptionModel: "gpt-realtime-whisper", openaiDeltaQuietMs: 30 },
+    options: { openaiTranscriptionModel: "gpt-realtime-whisper" },
     env: { OPENAI_API_KEY: "sk-test" },
     createWebSocket: () => socket,
+    setTimeoutFn: clock.setTimeoutFn,
+    clearTimeoutFn: clock.clearTimeoutFn,
   });
 
   transcription.sendAudio("frame");
@@ -489,7 +490,7 @@ test("transcription.completed is idempotent if delta-quiet already flushed the p
   await transcription.ready();
 
   socket.emit("message", JSON.stringify({ type: "conversation.item.input_audio_transcription.delta", delta: "hello world" }));
-  await new Promise((resolve) => setTimeout(resolve, 80));
+  clock.advance(DELTA_QUIET_MS);
   assert.deepEqual(queued, ["hello world"]);
 
   // Server's completed event arrives later. Should NOT re-queue because
@@ -498,19 +499,21 @@ test("transcription.completed is idempotent if delta-quiet already flushed the p
     type: "conversation.item.input_audio_transcription.completed",
     transcript: "hello world",
   }));
-  await new Promise((resolve) => setTimeout(resolve, 20));
   assert.deepEqual(queued, ["hello world"], "completed should not double-queue");
 });
 
 test("transcription.completed acts as fallback when delta-quiet hasn't fired yet (Stop case)", async () => {
   const queued = [];
   const socket = createMockSocket();
+  const clock = createFakeClock();
   const transcription = createOpenAITranscription({
     sendTranscript: () => {},
     queueTranscript: (text) => queued.push(text),
-    options: { openaiTranscriptionModel: "gpt-realtime-whisper", openaiDeltaQuietMs: 5000 },
+    options: { openaiTranscriptionModel: "gpt-realtime-whisper" },
     env: { OPENAI_API_KEY: "sk-test" },
     createWebSocket: () => socket,
+    setTimeoutFn: clock.setTimeoutFn,
+    clearTimeoutFn: clock.clearTimeoutFn,
   });
 
   transcription.sendAudio("frame");
@@ -525,7 +528,6 @@ test("transcription.completed acts as fallback when delta-quiet hasn't fired yet
     type: "conversation.item.input_audio_transcription.completed",
     transcript: "still talking",
   }));
-  await new Promise((resolve) => setTimeout(resolve, 20));
   assert.deepEqual(queued, ["still talking"]);
 });
 
