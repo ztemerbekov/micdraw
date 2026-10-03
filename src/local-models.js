@@ -3,6 +3,9 @@
 // fastest), sherpa-onnx streaming models everywhere else. Order matters: the
 // first model that runs on the platform is the default for its language.
 // Changing a sherpa model means updating its revision, sizes and SHA-256 together.
+// Reviewed 2026-10-03 (#28): no newer English Moonshine than medium and no
+// newer Kroko or Vosk builds, so the defaults stay. Other candidates wait for
+// a measurement: T-One for Russian (#15), NVIDIA Nemotron for English (#49).
 export const SUPPORTED_LANGUAGES = Object.freeze(["en", "ru"]);
 
 const ALL_PLATFORMS = ["darwin", "linux", "win32"];
