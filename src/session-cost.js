@@ -9,7 +9,8 @@ const PCM16_BYTES_PER_SAMPLE = 2;
 
 // Per 1M tokens, USD. cachedInput is the rate for input tokens served from
 // the prompt cache.
-// Reasoning tokens are billed at the output rate. GPT-6 bills prompt-cache
+// Reasoning tokens are billed at the output rate; the SDK already counts them
+// inside the output tokens, so they are not added again. GPT-6 bills prompt-cache
 // writes at 1.25x input; they are counted here as plain uncached input.
 export const AGENT_PRICING = {
   openai: {
@@ -54,11 +55,10 @@ export function computeAgentCost({ provider, model, usage }) {
   const cached = Math.min(Number(usage?.cached) || 0, input);
   const uncachedInput = Math.max(0, input - cached);
   const output = Number(usage?.output) || 0;
-  const reasoning = Number(usage?.reasoning) || 0;
   const cost =
     (uncachedInput * rates.input) / 1_000_000 +
     (cached * rates.cachedInput) / 1_000_000 +
-    ((output + reasoning) * rates.output) / 1_000_000;
+    (output * rates.output) / 1_000_000;
   return { priced: true, cost, rates };
 }
 
