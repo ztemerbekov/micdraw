@@ -794,7 +794,7 @@ export async function runWhiteboardWarmupOnce({ state, options, wss = null, atte
 function recordAgentCost(state, wss, agentProvider, result) {
   if (!state?.cost || !agentProvider) return;
   const usage = extractAgentUsage(result);
-  // Codex maps requested model "gpt-5.5-fast" -> model "gpt-5.5" + priority
+  // Codex maps requested model "gpt-6-luna-fast" -> model "gpt-6-luna" + priority
   // tier. For display, prefer the user's chosen string. (Codex isn't priced
   // per-token here anyway; the tracker just shows it for context.)
   const model = agentProvider.requestedModel ?? agentProvider.model;

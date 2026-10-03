@@ -1,5 +1,5 @@
 // Session cost tracking. The numbers in AGENT_PRICING / TRANSCRIPTION_PRICING
-// are OpenAI list pricing as of May 2026 - update them in one place if OpenAI
+// are OpenAI list pricing as of October 2026 - update them in one place if OpenAI
 // changes its rate card. Local providers (local, moonshine, ollama) are billed at
 // $0; codex routes through the user's ChatGPT subscription so it isn't
 // billed per-token here either.
@@ -8,10 +8,14 @@ const SAMPLE_RATE_HZ = 24_000;
 const PCM16_BYTES_PER_SAMPLE = 2;
 
 // Per 1M tokens, USD. cachedInput is the rate for input tokens served from
-// the prompt cache (10% of input across the board per OpenAI's policy).
-// Reasoning tokens are billed at the output rate.
+// the prompt cache.
+// Reasoning tokens are billed at the output rate. GPT-6 bills prompt-cache
+// writes at 1.25x input; they are counted here as plain uncached input.
 export const AGENT_PRICING = {
   openai: {
+    "gpt-6-luna":   { input: 0.10, cachedInput: 0.01,  output:  0.50 },
+    "gpt-6-sol":    { input: 2.00, cachedInput: 0.20,  output: 10.00 },
+    "gpt-6.1-sol":  { input: 2.00, cachedInput: 0.10,  output: 10.00 },
     "gpt-5.5":      { input: 5.00, cachedInput: 0.50,  output: 30.00 },
     "gpt-5.4":      { input: 2.50, cachedInput: 0.25,  output: 15.00 },
     "gpt-5.4-mini": { input: 0.75, cachedInput: 0.075, output:  4.50 },

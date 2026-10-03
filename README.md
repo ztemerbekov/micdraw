@@ -81,21 +81,23 @@ From a source checkout, `npm start` runs the same command.
 Settings persist at `~/.config/micdraw/settings.json` and are managed from the in-app status panel.
 Agent instructions are saved automatically from staging, can be up to 100,000 characters, and take effect on the next Start Preso.
 The live Session cost card estimates agent token costs and OpenAI Realtime audio costs for the current presentation, resetting on Start Preso or session reset.
-OpenAI prices use the built-in May 2026 rate table; local providers show `$0.0000`, Codex shows token volume because it routes through your subscription, and unknown models show `n/a`.
+OpenAI prices use the built-in October 2026 rate table; local providers show `$0.0000`, Codex shows token volume because it routes through your subscription, and unknown models show `n/a`.
 
 ### Defaults on first run
 
 When no settings file exists, Mic Draw picks providers based on what it finds in your environment:
 
-| You have...                                | Agent provider                 | Transcription           |
-| ------------------------------------------ | ------------------------------ | ----------------------- |
-| Nothing                                    | OpenAI `gpt-5.5` (needs a key) | Local, English          |
-| `OPENAI_API_KEY` in env                    | OpenAI `gpt-5.5`               | OpenAI Realtime         |
-| Codex CLI signed in (`~/.codex/auth.json`) | Codex `gpt-5.5-fast`           | Local, English          |
-| Codex CLI signed in + `OPENAI_API_KEY`     | Codex `gpt-5.5-fast`           | OpenAI Realtime         |
-| `OLLAMA_MODEL` set                         | Ollama (your model)            | Local, English          |
-| `OPENROUTER_API_KEY` in env                | OpenRouter `x-ai/grok-4.20`    | (unchanged by this key) |
-| `DEEPGRAM_API_KEY` in env                  | (unchanged by this key)        | Deepgram `nova-3`       |
+| You have...                                | Agent provider                    | Transcription           |
+| ------------------------------------------ | --------------------------------- | ----------------------- |
+| Nothing                                    | OpenAI `gpt-6-luna` (needs a key) | Local, English          |
+| `OPENAI_API_KEY` in env                    | OpenAI `gpt-6-luna`               | OpenAI Realtime         |
+| Codex CLI signed in (`~/.codex/auth.json`) | Codex `gpt-6-luna-fast`           | Local, English          |
+| Codex CLI signed in + `OPENAI_API_KEY`     | Codex `gpt-6-luna-fast`           | OpenAI Realtime         |
+| `OLLAMA_MODEL` set                         | Ollama (your model)               | Local, English          |
+| `OPENROUTER_API_KEY` in env                | OpenRouter `x-ai/grok-4.20`       | (unchanged by this key) |
+| `DEEPGRAM_API_KEY` in env                  | (unchanged by this key)           | Deepgram `nova-3`       |
+
+A Codex model name ending in `-fast` runs in Fast mode, which draws sooner but uses more of your ChatGPT plan. If a saved Codex model is one that Codex no longer serves (GPT-5.5 leaves it on 2026-10-14), Mic Draw switches it to GPT-6 Luna on start.
 
 Auto-detection precedence: **`OPENROUTER_API_KEY` wins over Codex CLI auth wins over `OLLAMA_MODEL` wins over `OPENAI_API_KEY`** for the agent. For transcription, **`DEEPGRAM_API_KEY` wins over `OPENAI_API_KEY`**, otherwise local. After first run, this auto-detection no longer applies - change providers from the in-app status panel.
 
