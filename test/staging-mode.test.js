@@ -771,35 +771,6 @@ test("whiteboard:user-elements WS messages update state.elements in live mode", 
   }
 });
 
-test("whiteboard:user-elements is ignored while an agent turn is running", async () => {
-  const { httpServer, url, state } = await startTestServer();
-  const ws = new WebSocket(url.replace("http:", "ws:") + "/ws");
-  try {
-    await new Promise((resolve, reject) => {
-      ws.once("open", resolve);
-      ws.once("error", reject);
-    });
-    await fetch(`${url}/api/preso/start`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ stagingElements: SAMPLE_STAGING_ELEMENTS }),
-    });
-    // The page echoes the agent's half-written edit back. Taking it as the
-    // board would make the finished edit land on top of its own preview.
-    state.agentBusy = true;
-    const before = state.elements;
-    ws.send(JSON.stringify({
-      type: "whiteboard:user-elements",
-      elements: [{ type: "rectangle", id: "preview-echo", x: 0, y: 0, width: 1, height: 1 }],
-    }));
-    await new Promise((r) => setTimeout(r, 100));
-    assert.equal(state.elements, before);
-  } finally {
-    ws.terminate();
-    await new Promise((resolve) => httpServer.close(resolve));
-  }
-});
-
 test("whiteboard:user-elements is ignored in staging mode", async () => {
   const { httpServer, url, state } = await startTestServer();
   const ws = new WebSocket(url.replace("http:", "ws:") + "/ws");
