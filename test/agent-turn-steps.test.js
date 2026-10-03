@@ -1,3 +1,4 @@
+// @ts-nocheck - scripted model results stand in for a real model.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
@@ -66,4 +67,30 @@ test("a turn whose edit comes back with a warning gets another step", async () =
 test("a turn whose edit fails gets another step", async () => {
   const { requests } = await runTurn([applyStep([{ type: "replace", line: 5, element: box }]), doneStep]);
   assert.equal(requests, 2);
+});
+
+test("a turn's usage and cost count every step, not just the last", async () => {
+  const { createSessionCostTracker } = await import("../src/session-cost.js");
+  const stepUsage = (input, output, reasoning) => ({
+    inputTokens: { total: input, noCache: input, cacheRead: 0, cacheWrite: 0 },
+    outputTokens: { total: output, text: output - reasoning, reasoning },
+  });
+  const loose = { type: "text", id: "loose", x: 10, y: 10, text: "Box", fontSize: 18 };
+  const model = new MockLanguageModelV3({
+    doGenerate: [
+      // An edit that comes back with a warning, then the closing step.
+      { ...applyStep([{ type: "insert_after", line: 0, element: box }, { type: "insert_after", line: 1, element: loose }]), usage: stepUsage(1000, 400, 100) },
+      { ...doneStep, usage: stepUsage(1200, 5, 0) },
+    ],
+  });
+  const state = { elements: [], agentHistory: [], cost: createSessionCostTracker() };
+  await runWhiteboardAgent({
+    transcript: "Add a box",
+    state,
+    wss: { clients: new Set() },
+    options: {},
+    generateTextFn: (callOptions) => generateText({ ...callOptions, model }),
+  });
+  const { tokens } = state.cost.getSummary().agent;
+  assert.deepEqual(tokens, { input: 2200, cached: 0, output: 405, reasoning: 100 });
 });

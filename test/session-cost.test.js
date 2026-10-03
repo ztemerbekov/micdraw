@@ -12,10 +12,11 @@ test("computeAgentCost prices uncached input, cached input, and output separatel
   });
   // 2k uncached @ $5/M = $0.01
   // 8k cached @ $0.5/M = $0.004
-  // 1k output @ $30/M = $0.03
-  // 0.5k reasoning @ $30/M = $0.015 (reasoning billed at output rate)
+  // 1k output @ $30/M = $0.03. The 0.5k reasoning tokens are part of those
+  // 1k output tokens (the SDK reports them inside outputTokens), so they are
+  // not billed a second time.
   assert.ok(cost.priced);
-  assert.equal(cost.cost.toFixed(6), (0.01 + 0.004 + 0.03 + 0.015).toFixed(6));
+  assert.equal(cost.cost.toFixed(6), (0.01 + 0.004 + 0.03).toFixed(6));
 });
 
 test("computeAgentCost returns priced=false for unknown OpenAI model", () => {

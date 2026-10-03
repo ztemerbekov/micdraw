@@ -662,7 +662,10 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
   } finally {
     preview.settle();
   }
-  logAgentUsage("turn", result, {
+  // `usage` is the last step only; a turn that edits and then follows up
+  // costs every step (#34).
+  const turnUsage = { usage: result?.totalUsage ?? result?.usage };
+  logAgentUsage("turn", turnUsage, {
     transcript: transcript?.slice(0, 80),
     fingerprints: {
       system: fingerprint(effectiveSystem),
@@ -670,7 +673,7 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
       tools: fingerprint(toolDefinitionFingerprintInput(agentCallOptions.tools)),
     },
   });
-  recordAgentCost(state, wss, agentProvider, result);
+  recordAgentCost(state, wss, agentProvider, turnUsage);
   options.onAgentEvent?.({ type: "model:end", transcript, result: summarizeAgentResult(result), timestamp: new Date().toISOString() });
 
   if (mySession.active) {
@@ -825,6 +828,7 @@ async function runWhiteboardAgentGeneration(agentProvider, agentCallOptions, { g
     text: await safeGet("text"),
     finishReason: await safeGet("finishReason"),
     usage: await safeGet("usage"),
+    totalUsage: await safeGet("totalUsage"),
     toolCalls: await safeGet("toolCalls"),
     toolResults: await safeGet("toolResults"),
     steps: await safeGet("steps"),
