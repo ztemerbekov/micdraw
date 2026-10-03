@@ -46,9 +46,21 @@ jobs:
           echo "::error::npm does not serve micdraw@$VERSION after 10 minutes."
           exit 1
       # No checkout: npx must install the package from npm, not use the repo.
+      # npm serves the metadata installs read separately from what `npm view`
+      # reads, and it can lag behind a fresh publish: npx then fails with
+      # ETARGET although the step above saw the version. That case retries.
       - name: Run the CLI from npm
         shell: bash
         run: |
-          output=$(npx --yes "micdraw@$VERSION" --help)
-          echo "$output"
-          grep -q "Usage:" <<< "$output"
+          for attempt in 1 2 3 4 5; do
+            if output=$(npx --yes "micdraw@$VERSION" --help 2>&1); then
+              echo "$output"
+              grep -q "Usage:" <<< "$output"
+              exit 0
+            fi
+            echo "$output"
+            grep -q "ETARGET" <<< "$output" || exit 1
+            sleep 30
+          done
+          echo "::error::npx still cannot find micdraw@$VERSION."
+          exit 1
