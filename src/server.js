@@ -24,7 +24,7 @@ import { createSherpaTranscription as createDefaultSherpaTranscription } from ".
 import { audioSecondsFromBase64Pcm16 } from "./session-cost.js";
 import { validateAgentInstructions } from "./settings-store.js";
 import { broadcast, createWhiteboardSession } from "./whiteboard-session.js";
-import { detectMalformedLayoutWarnings, normalizeWhiteboardElements } from "./whiteboard-elements.js";
+import { detectMalformedLayoutWarnings, fitShapesToLabels, normalizeWhiteboardElements } from "./whiteboard-elements.js";
 import { extractWhiteboardKeywords } from "./whiteboard-keywords.js";
 import { applyWhiteboardEditOperations, formatLineNumberedWhiteboard } from "./whiteboard-tools.js";
 
@@ -548,7 +548,7 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
         execute: async ({ elements }) => {
           if (!mySession.active) return STALE_SESSION_TOOL_RESULT;
           options.onAgentEvent?.({ type: "tool:start", tool: "whiteboard_overwrite", input: { elements }, timestamp: new Date().toISOString() });
-          const normalizedElements = normalizeWhiteboardElements(elements);
+          const normalizedElements = fitShapesToLabels(normalizeWhiteboardElements(elements));
           state.elements = normalizedElements;
           state.canvasDirtyForAgent = true;
           broadcast(wss, { type: "whiteboard:update", elements: normalizedElements });
@@ -581,7 +581,7 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
 
           let canvasResult = "";
           if (hasOps) {
-            const nextElements = normalizeWhiteboardElements(applyWhiteboardEditOperations(state.elements, operations));
+            const nextElements = fitShapesToLabels(normalizeWhiteboardElements(applyWhiteboardEditOperations(state.elements, operations)));
             state.elements = nextElements;
             state.canvasDirtyForAgent = true;
             broadcast(wss, { type: "whiteboard:update", elements: nextElements });
@@ -1153,7 +1153,7 @@ The audience's viewport is whatever you last set it to. They cannot see anything
 - Treat moving the viewport to follow the speaker as a first-class part of your job, not an afterthought.
 The app will convert these simple drawing objects into Excalidraw elements after your tool call.
 Your coordinates and sizes are used directly.
-The app does not automatically fix spacing, resize shapes, wrap labels, or reroute arrows.
+The app only grows a shape whose label would overflow, and only when the bigger shape overlaps nothing new. It does not fix spacing, wrap labels, or reroute arrows.
 
 whiteboard_apply operations:
 - replace: replace one existing line with one drawing object.

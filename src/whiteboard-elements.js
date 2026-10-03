@@ -6,7 +6,10 @@ export function normalizeWhiteboardElements(elements) {
 
 const SHAPE_TYPES = new Set(["rectangle", "ellipse", "diamond"]);
 const CHAR_WIDTH_RATIO = 0.6;
-const PADDING_PER_SIDE = 24;
+// Excalidraw 0.18 keeps 5 px between a label and its container
+// (BOUND_TEXT_PADDING). A label overflows only below that; warning earlier
+// sends the agent on a whole extra edit pass for nothing.
+const LABEL_PADDING = 5;
 
 function rectanglesOverlap(a, b) {
   return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
@@ -20,6 +23,71 @@ function estimateTextBox(text, fontSize) {
     width: Math.ceil(longest * fs * CHAR_WIDTH_RATIO),
     height: Math.ceil(lines.length * fs * 1.25),
   };
+}
+
+// The padding the system prompt asks for. A shape the app grows gets this much.
+const COMFORT_PADDING = 24;
+
+function labelledShapeSize(shape, padding) {
+  const estimated = estimateTextBox(shape.label.text, shape.label.fontSize ?? 18);
+  return { width: estimated.width + padding * 2, height: estimated.height + padding * 2 };
+}
+
+function grownAroundCentre(shape, size) {
+  const width = Math.max(shape.width, size.width);
+  const height = Math.max(shape.height, size.height);
+  return {
+    ...shape,
+    x: Math.round(shape.x - (width - shape.width) / 2),
+    y: Math.round(shape.y - (height - shape.height) / 2),
+    width,
+    height,
+  };
+}
+
+// Shapes and standalone text an element can collide with. Arrows and lines are
+// left out: they end at shape edges by design.
+function collisionBox(element) {
+  if (typeof element?.x !== "number" || typeof element?.y !== "number") return null;
+  if (SHAPE_TYPES.has(element.type)) {
+    if (typeof element.width !== "number" || typeof element.height !== "number") return null;
+    return element;
+  }
+  if (element.type === "text") {
+    const estimated = estimateTextBox(element.text, element.fontSize);
+    return {
+      x: element.x,
+      y: element.y,
+      width: typeof element.width === "number" ? element.width : estimated.width,
+      height: typeof element.height === "number" ? element.height : estimated.height,
+    };
+  }
+  return null;
+}
+
+// Grow labelled shapes whose label would overflow, keeping each centre in
+// place, so the agent does not spend another edit pass resizing them. Growth
+// that would run into something the shape did not already touch is skipped,
+// and the layout warning goes to the agent instead.
+export function fitShapesToLabels(elements) {
+  if (!Array.isArray(elements)) return [];
+  const fitted = [...elements];
+  fitted.forEach((shape, index) => {
+    if (!SHAPE_TYPES.has(shape?.type) || typeof shape.label?.text !== "string" || !shape.label.text) return;
+    if (typeof shape.width !== "number" || typeof shape.height !== "number") return;
+    const needed = labelledShapeSize(shape, LABEL_PADDING);
+    if (shape.width >= needed.width && shape.height >= needed.height) return;
+    const others = fitted.filter((_, i) => i !== index).map(collisionBox).filter(Boolean);
+    const runsIntoSomething = (box) => others.some((other) => rectanglesOverlap(box, other) && !rectanglesOverlap(shape, other));
+    for (const padding of [COMFORT_PADDING, LABEL_PADDING]) {
+      const grown = grownAroundCentre(shape, labelledShapeSize(shape, padding));
+      if (!runsIntoSomething(grown)) {
+        fitted[index] = grown;
+        return;
+      }
+    }
+  });
+  return fitted;
 }
 
 export function detectMalformedLayoutWarnings(elements) {
@@ -56,8 +124,8 @@ export function detectMalformedLayoutWarnings(elements) {
     if (typeof labelText !== "string" || labelText.length === 0) continue;
     const fontSize = shape.label.fontSize ?? 18;
     const estimated = estimateTextBox(labelText, fontSize);
-    const minWidth = estimated.width + PADDING_PER_SIDE * 2;
-    const minHeight = estimated.height + PADDING_PER_SIDE * 2;
+    const minWidth = estimated.width + LABEL_PADDING * 2;
+    const minHeight = estimated.height + LABEL_PADDING * 2;
     if (typeof shape.width === "number" && shape.width < minWidth) {
       warnings.push(
         `LAYOUT WARNING: shape "${shape.id}" is ${shape.width}px wide but its label "${labelText.slice(0, 40)}" needs about ${minWidth}px (text + padding). Either widen the shape or shorten the label - otherwise the label text will overflow the shape's edges.`,
