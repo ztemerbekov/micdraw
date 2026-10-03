@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, mkdirSync, renameSync, statSync } from "node:fs";
 import { createServer as createHttpServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -959,9 +959,30 @@ function summarizeAgentResult(result) {
   );
 }
 
-const DEFAULT_LOG_DIR = path.join(os.homedir(), ".config", "micdraw", "logs");
+// Node's test runner marks its child processes with NODE_TEST_CONTEXT. Tests
+// must not write fake turns into the user's real logs (#35).
+const DEFAULT_LOG_DIR = process.env.NODE_TEST_CONTEXT
+  ? path.join(os.tmpdir(), "micdraw-test-logs")
+  : path.join(os.homedir(), ".config", "micdraw", "logs");
 const CACHE_USAGE_LOG_PATH = process.env.MICDRAW_CACHE_LOG ?? path.join(DEFAULT_LOG_DIR, "cache.log");
 const DEBUG_LOG_PATH = process.env.MICDRAW_DEBUG_LOG ?? path.join(DEFAULT_LOG_DIR, "debug.log");
+// The debug log keeps whole requests and grew to megabytes in a day of use.
+// Past this size a log moves to "<name>.1" (replacing an older one) and
+// starts afresh.
+const LOG_MAX_BYTES = 10 * 1024 * 1024;
+
+export function agentLogPaths() {
+  return { cache: CACHE_USAGE_LOG_PATH, debug: DEBUG_LOG_PATH };
+}
+
+export function appendToLog(file, text, { maxBytes = LOG_MAX_BYTES } = {}) {
+  try {
+    if (statSync(file).size > maxBytes) renameSync(file, `${file}.1`);
+  } catch {
+    // No log yet.
+  }
+  appendFileSync(file, text);
+}
 
 let logDirsEnsured = false;
 function ensureLogDirs() {
@@ -1019,7 +1040,7 @@ export function dumpAgentRequest(label, args) {
       messageCount: Array.isArray(messages) ? messages.length : 0,
       messages: Array.isArray(messages) ? messages.map(summarizeMessageForDump) : null,
     };
-    appendFileSync(DEBUG_LOG_PATH, "\n" + "=".repeat(80) + "\n" + JSON.stringify(record, null, 2) + "\n");
+    appendToLog(DEBUG_LOG_PATH, "\n" + "=".repeat(80) + "\n" + JSON.stringify(record, null, 2) + "\n");
   } catch (error) {
     console.warn("[debug] failed to append to debug log:", error.message);
   }
@@ -1035,7 +1056,7 @@ export function dumpToolCall(toolName, input, sceneIds, result) {
       sceneIds: Array.isArray(sceneIds) ? sceneIds : null,
       resultPreview: typeof result === "string" ? result.slice(0, 600) : result,
     };
-    appendFileSync(DEBUG_LOG_PATH, "\n" + "-".repeat(80) + "\nTOOL CALL: " + JSON.stringify(record, null, 2) + "\n");
+    appendToLog(DEBUG_LOG_PATH, "\n" + "-".repeat(80) + "\nTOOL CALL: " + JSON.stringify(record, null, 2) + "\n");
   } catch (error) {
     console.warn("[debug] failed to append tool call to debug log:", error.message);
   }
@@ -1104,7 +1125,7 @@ export function logAgentUsage(label, result, extras = {}) {
       rawUsage: result?.usage ?? null,
       ...extras,
     };
-    appendFileSync(CACHE_USAGE_LOG_PATH, JSON.stringify(record) + "\n");
+    appendToLog(CACHE_USAGE_LOG_PATH, JSON.stringify(record) + "\n");
   } catch (error) {
     // Don't let logging break the agent flow.
     console.warn("[cache] failed to append to log file:", error.message);

@@ -119,7 +119,7 @@ Provider variables only seed `settings.json` on first run. Once the file exists,
 | `OPENROUTER_MODEL`     | Seeds the OpenRouter agent model. Default: `x-ai/grok-4.20`. |
 | `OPENROUTER_BASE_URL`  | Seeds the OpenRouter API base URL.                    |
 | `MICDRAW_CACHE_LOG`    | Cache usage log path. Default: `~/.config/micdraw/logs/cache.log`. |
-| `MICDRAW_DEBUG_LOG`    | Agent debug log path. Default: `~/.config/micdraw/logs/debug.log`. |
+| `MICDRAW_DEBUG_LOG`    | Agent debug log path. Default: `~/.config/micdraw/logs/debug.log`. Each log moves to `<name>.1` once it passes 10 MB. |
 
 Local transcription runs on your machine on macOS, Linux and Windows; see [Local transcription](#local-transcription) for languages, models and where they are stored.
 
