@@ -41,6 +41,10 @@ const DEEPGRAM_TRANSCRIPTION_MODELS = ["nova-3", "nova-2"];
 // Free-text, not a dropdown: OpenRouter's catalogue changes weekly and a fixed
 // list here would be wrong within the month.
 const OPENROUTER_MODEL_PLACEHOLDER = "e.g. x-ai/grok-4.20";
+// Free-text as well: xAI ships a new Grok every few months.
+const XAI_MODEL_PLACEHOLDER = "e.g. grok-4.3";
+// xAI's one streaming speech-to-text model (src/xai-transcription.js).
+const XAI_TRANSCRIPTION_MODEL = "grok-voice-transcribe-2.0";
 const MIC_STORAGE_KEY = "micdraw.mic";
 const PANEL_HIDDEN_STORAGE_KEY = "micdraw.panelHidden";
 
@@ -1314,6 +1318,7 @@ function agentModelLabel(settings) {
     return `${settings.agent.codex.model}${settings.agent.codex.fast === false ? "" : " · fast"}`;
   if (provider === "openrouter")
     return settings.agent.openrouter?.model || "(unset)";
+  if (provider === "xai") return settings.agent.xai?.model || "(unset)";
   return settings.agent.openai.model;
 }
 
@@ -1337,6 +1342,7 @@ function sttModelLabel(settings, engineLabel) {
     return settings.transcription.moonshine.model;
   if (settings.transcription.provider === "deepgram")
     return settings.transcription.deepgram?.model || "(unset)";
+  if (settings.transcription.provider === "xai") return XAI_TRANSCRIPTION_MODEL;
   return settings.transcription.openai.model;
 }
 
@@ -1476,6 +1482,11 @@ function AgentEditor({ settings, onSave, onCancel }) {
     settings.agent.openrouter?.baseURL ?? "",
   );
   const [openrouterKey, setOpenrouterKey] = React.useState("");
+  const [xaiModel, setXaiModel] = React.useState(settings.agent.xai?.model ?? "");
+  const [xaiBaseURL, setXaiBaseURL] = React.useState(
+    settings.agent.xai?.baseURL ?? "",
+  );
+  const [xaiKey, setXaiKey] = React.useState("");
   const [openaiKey, setOpenaiKey] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [errorText, setErrorText] = React.useState("");
@@ -1484,12 +1495,14 @@ function AgentEditor({ settings, onSave, onCancel }) {
     provider === "openai" && !settings.hasOpenAIKey && !openaiKey;
   const needsOpenRouterKey =
     provider === "openrouter" && !settings.hasOpenRouterKey && !openrouterKey;
+  const needsXaiKey =
+    provider === "xai" && !settings.hasXaiKey && !xaiKey;
 
   async function submit() {
     setBusy(true);
     setErrorText("");
     const patch = {
-      agent: { provider, openai: {}, codex: {}, ollama: {}, openrouter: {} },
+      agent: { provider, openai: {}, codex: {}, ollama: {}, openrouter: {}, xai: {} },
     };
     if (provider === "openai") {
       patch.agent.openai.model = openaiModel;
@@ -1501,6 +1514,9 @@ function AgentEditor({ settings, onSave, onCancel }) {
     } else if (provider === "openrouter") {
       patch.agent.openrouter.model = openrouterModel;
       patch.agent.openrouter.baseURL = openrouterBaseURL;
+    } else if (provider === "xai") {
+      patch.agent.xai.model = xaiModel;
+      patch.agent.xai.baseURL = xaiBaseURL;
     } else {
       patch.agent.ollama.model = ollamaModel;
       patch.agent.ollama.baseURL = ollamaBaseURL;
@@ -1508,6 +1524,7 @@ function AgentEditor({ settings, onSave, onCancel }) {
     const apiKeys = {};
     if (openaiKey) apiKeys.openai = openaiKey;
     if (openrouterKey) apiKeys.openrouter = openrouterKey;
+    if (xaiKey) apiKeys.xai = xaiKey;
     if (Object.keys(apiKeys).length > 0) patch.apiKeys = apiKeys;
     try {
       await onSave(patch);
@@ -1532,9 +1549,47 @@ function AgentEditor({ settings, onSave, onCancel }) {
         React.createElement("option", { value: "openai" }, "OpenAI"),
         React.createElement("option", { value: "codex" }, "Codex"),
         React.createElement("option", { value: "openrouter" }, "OpenRouter"),
+        React.createElement("option", { value: "xai" }, "xAI"),
         React.createElement("option", { value: "ollama" }, "Ollama"),
       ),
     ),
+    provider === "xai"
+      ? field(
+          "Model",
+          React.createElement("input", {
+            type: "text",
+            value: xaiModel,
+            onChange: (e) => setXaiModel(e.target.value),
+            placeholder: XAI_MODEL_PLACEHOLDER,
+            disabled: busy,
+          }),
+        )
+      : null,
+    provider === "xai"
+      ? field(
+          "API key",
+          React.createElement("input", {
+            type: "password",
+            value: xaiKey,
+            onChange: (e) => setXaiKey(e.target.value),
+            placeholder: settings.hasXaiKey
+              ? "configured (enter to replace)"
+              : "xai-...",
+            disabled: busy,
+          }),
+        )
+      : null,
+    provider === "xai"
+      ? field(
+          "Base URL",
+          React.createElement("input", {
+            type: "text",
+            value: xaiBaseURL,
+            onChange: (e) => setXaiBaseURL(e.target.value),
+            disabled: busy,
+          }),
+        )
+      : null,
     provider === "openrouter"
       ? field(
           "Model",
@@ -1679,7 +1734,7 @@ function AgentEditor({ settings, onSave, onCancel }) {
         "button",
         {
           onClick: submit,
-          disabled: busy || needsOpenAIKey || needsOpenRouterKey,
+          disabled: busy || needsOpenAIKey || needsOpenRouterKey || needsXaiKey,
         },
         busy ? "Saving..." : "Save",
       ),
@@ -1741,6 +1796,8 @@ function TranscriptionEditor({
     (settings.transcription.deepgram?.keyterms ?? []).join(", "),
   );
   const [deepgramKey, setDeepgramKey] = React.useState("");
+  // The same xAI key as the agent's; entering it here sets it for both.
+  const [xaiKey, setXaiKey] = React.useState("");
   const [openaiKey, setOpenaiKey] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [errorText, setErrorText] = React.useState("");
@@ -1749,6 +1806,8 @@ function TranscriptionEditor({
     provider === "openai" && !settings.hasOpenAIKey && !openaiKey;
   const needsDeepgramKey =
     provider === "deepgram" && !settings.hasDeepgramKey && !deepgramKey;
+  const needsXaiKey =
+    provider === "xai" && !settings.hasXaiKey && !xaiKey;
 
   async function submit() {
     setBusy(true);
@@ -1771,6 +1830,7 @@ function TranscriptionEditor({
     const apiKeys = {};
     if (openaiKey) apiKeys.openai = openaiKey;
     if (deepgramKey) apiKeys.deepgram = deepgramKey;
+    if (xaiKey) apiKeys.xai = xaiKey;
     if (Object.keys(apiKeys).length > 0) patch.apiKeys = apiKeys;
     try {
       await onSave(patch);
@@ -1799,8 +1859,23 @@ function TranscriptionEditor({
         ),
         React.createElement("option", { value: "openai" }, "OpenAI Realtime"),
         React.createElement("option", { value: "deepgram" }, "Deepgram"),
+        React.createElement("option", { value: "xai" }, "xAI"),
       ),
     ),
+    provider === "xai"
+      ? field(
+          "API key",
+          React.createElement("input", {
+            type: "password",
+            value: xaiKey,
+            onChange: (e) => setXaiKey(e.target.value),
+            placeholder: settings.hasXaiKey
+              ? "configured (enter to replace)"
+              : "xai-...",
+            disabled: busy,
+          }),
+        )
+      : null,
     provider === "deepgram"
       ? field(
           "Model",
@@ -1914,7 +1989,7 @@ function TranscriptionEditor({
         "button",
         {
           onClick: submit,
-          disabled: busy || needsOpenAIKey || needsDeepgramKey,
+          disabled: busy || needsOpenAIKey || needsDeepgramKey || needsXaiKey,
         },
         busy ? "Saving..." : "Save",
       ),

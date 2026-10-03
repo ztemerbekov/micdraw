@@ -86,39 +86,43 @@ OpenAI prices use the built-in October 2026 rate table; local providers show `$0
 
 When no settings file exists, Mic Draw picks providers based on what it finds in your environment:
 
-| You have...                                | Agent provider                     | Transcription           |
-| ------------------------------------------ | ---------------------------------- | ----------------------- |
-| Nothing                                    | OpenAI `gpt-6.1-sol` (needs a key) | Local, English          |
-| `OPENAI_API_KEY` in env                    | OpenAI `gpt-6.1-sol`               | OpenAI Realtime         |
-| Codex CLI signed in (`~/.codex/auth.json`) | Codex `gpt-6.1-sol`, Fast mode     | Local, English          |
-| Codex CLI signed in + `OPENAI_API_KEY`     | Codex `gpt-6.1-sol`, Fast mode     | OpenAI Realtime         |
-| `OLLAMA_MODEL` set                         | Ollama (your model)                | Local, English          |
-| `OPENROUTER_API_KEY` in env                | OpenRouter `x-ai/grok-4.20`        | (unchanged by this key) |
-| `DEEPGRAM_API_KEY` in env                  | (unchanged by this key)            | Deepgram `nova-3`       |
+| You have...                                | Agent provider                     | Transcription                   |
+| ------------------------------------------ | ---------------------------------- | ------------------------------- |
+| Nothing                                    | OpenAI `gpt-6.1-sol` (needs a key) | Local, English                  |
+| `OPENAI_API_KEY` in env                    | OpenAI `gpt-6.1-sol`               | OpenAI Realtime                 |
+| Codex CLI signed in (`~/.codex/auth.json`) | Codex `gpt-6.1-sol`, Fast mode     | Local, English                  |
+| Codex CLI signed in + `OPENAI_API_KEY`     | Codex `gpt-6.1-sol`, Fast mode     | OpenAI Realtime                 |
+| `OLLAMA_MODEL` set                         | Ollama (your model)                | Local, English                  |
+| `OPENROUTER_API_KEY` in env                | OpenRouter `x-ai/grok-4.20`        | (unchanged by this key)         |
+| `DEEPGRAM_API_KEY` in env                  | (unchanged by this key)            | Deepgram `nova-3`               |
+| `XAI_API_KEY` in env                       | xAI `grok-4.3`                     | xAI `grok-voice-transcribe-2.0` |
 
 Codex runs in OpenAI's Fast mode by default (the **Fast mode** switch in the agent settings): replies come sooner, but they use your ChatGPT plan 2.5x faster. For OpenAI and Codex the agent settings offer one model, GPT-6.1 Sol: GPT-6 Sol and GPT-6 Luna reply sooner, but their drawings fell short. A saved pick of either, or of a model Codex no longer serves (GPT-5.5 leaves it on 2026-10-14), switches to GPT-6.1 Sol on start, and a saved reasoning effort of `none`, which GPT-6.1 Sol rejects, switches to `low`.
 
-Auto-detection precedence: **`OPENROUTER_API_KEY` wins over Codex CLI auth wins over `OLLAMA_MODEL` wins over `OPENAI_API_KEY`** for the agent. For transcription, **`DEEPGRAM_API_KEY` wins over `OPENAI_API_KEY`**, otherwise local. After first run, this auto-detection no longer applies - change providers from the in-app status panel.
+Auto-detection precedence: **`OPENROUTER_API_KEY` wins over Codex CLI auth wins over `OLLAMA_MODEL` wins over `XAI_API_KEY` wins over `OPENAI_API_KEY`** for the agent. For transcription, **`DEEPGRAM_API_KEY` wins over `OPENAI_API_KEY` wins over `XAI_API_KEY`**, otherwise local. After first run, this auto-detection no longer applies - change providers from the in-app status panel.
 
 ### Environment variables
 
 Provider variables only seed `settings.json` on first run. Once the file exists, they're ignored - edit the file or use the in-app panel. Log path variables are read on each process start.
 
-| Variable               | Purpose                                               |
-| ---------------------- | ----------------------------------------------------- |
-| `PORT`                 | Port to listen on. Default: `3210`.                   |
-| `OPENAI_API_KEY`       | Seeds the OpenAI key for both agent and Realtime STT. |
-| `OPENAI_MODEL`         | Seeds the OpenAI agent model.                         |
-| `OPENAI_BASE_URL`      | Seeds the OpenAI agent API base URL.                  |
-| `CODEX_MODEL`          | Seeds the Codex model.                                |
-| `OLLAMA_MODEL`         | Seeds the Ollama model.                               |
-| `DEEPGRAM_API_KEY`     | Seeds the Deepgram key (STT only, separate from OpenAI's). |
-| `DEEPGRAM_MODEL`       | Seeds the Deepgram model. Default: `nova-3`.          |
-| `OPENROUTER_API_KEY`   | Seeds the OpenRouter key (agent only).                |
-| `OPENROUTER_MODEL`     | Seeds the OpenRouter agent model. Default: `x-ai/grok-4.20`. |
-| `OPENROUTER_BASE_URL`  | Seeds the OpenRouter API base URL.                    |
-| `MICDRAW_CACHE_LOG`    | Cache usage log path. Default: `~/.config/micdraw/logs/cache.log`. |
-| `MICDRAW_DEBUG_LOG`    | Agent debug log path. Default: `~/.config/micdraw/logs/debug.log`. Each log moves to `<name>.1` once it passes 10 MB. |
+| Variable              | Purpose                                                                                                               |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `PORT`                | Port to listen on. Default: `3210`.                                                                                   |
+| `OPENAI_API_KEY`      | Seeds the OpenAI key for both agent and Realtime STT.                                                                 |
+| `OPENAI_MODEL`        | Seeds the OpenAI agent model.                                                                                         |
+| `OPENAI_BASE_URL`     | Seeds the OpenAI agent API base URL.                                                                                  |
+| `CODEX_MODEL`         | Seeds the Codex model.                                                                                                |
+| `OLLAMA_MODEL`        | Seeds the Ollama model.                                                                                               |
+| `DEEPGRAM_API_KEY`    | Seeds the Deepgram key (STT only, separate from OpenAI's).                                                            |
+| `DEEPGRAM_MODEL`      | Seeds the Deepgram model. Default: `nova-3`.                                                                          |
+| `OPENROUTER_API_KEY`  | Seeds the OpenRouter key (agent only).                                                                                |
+| `OPENROUTER_MODEL`    | Seeds the OpenRouter agent model. Default: `x-ai/grok-4.20`.                                                          |
+| `OPENROUTER_BASE_URL` | Seeds the OpenRouter API base URL.                                                                                    |
+| `XAI_API_KEY`         | Seeds the xAI key for both agent and speech-to-text.                                                                  |
+| `XAI_MODEL`           | Seeds the xAI agent model. Default: `grok-4.3`.                                                                       |
+| `XAI_BASE_URL`        | Seeds the xAI API base URL.                                                                                           |
+| `MICDRAW_CACHE_LOG`   | Cache usage log path. Default: `~/.config/micdraw/logs/cache.log`.                                                    |
+| `MICDRAW_DEBUG_LOG`   | Agent debug log path. Default: `~/.config/micdraw/logs/debug.log`. Each log moves to `<name>.1` once it passes 10 MB. |
 
 Local transcription runs on your machine on macOS, Linux and Windows; see [Local transcription](#local-transcription) for languages, models and where they are stored.
 
@@ -144,7 +148,7 @@ Moonshine runs as a native sidecar on `darwin-arm64` and `darwin-x64`. For now t
 
 ## Languages in the cloud
 
-OpenAI Realtime and Deepgram transcribe 16 languages: English, Russian, German, French, Spanish, Mandarin Chinese, Portuguese, Italian, Japanese, Korean, Hindi, Ukrainian, Polish, Turkish, Dutch and Arabic. Pick one in the Voice panel; the engine gets it as a hint (`languages` for OpenAI `gpt-live-transcribe`, `language` for Deepgram). Deepgram also offers **Mixed languages** (`multi`) for a talk that switches between English, Spanish, French, German, Hindi, Russian, Portuguese, Japanese, Italian and Dutch, such as Russian with English terms. OpenAI `gpt-realtime-whisper` takes no language hint and detects the language itself.
+OpenAI Realtime and Deepgram transcribe 16 languages: English, Russian, German, French, Spanish, Mandarin Chinese, Portuguese, Italian, Japanese, Korean, Hindi, Ukrainian, Polish, Turkish, Dutch and Arabic. Pick one in the Voice panel; the engine gets it as a hint (`languages` for OpenAI `gpt-live-transcribe`, `language` for Deepgram). Deepgram also offers **Mixed languages** (`multi`) for a talk that switches between English, Spanish, French, German, Hindi, Russian, Portuguese, Japanese, Italian and Dutch, such as Russian with English terms. OpenAI `gpt-realtime-whisper` takes no language hint and detects the language itself. xAI offers the same languages except Mandarin Chinese and Ukrainian, which its docs do not list.
 
 These settings follow the vendors' documentation and have not been verified live yet.
 
@@ -209,6 +213,13 @@ Two deliberate differences from the OpenAI provider:
 - **Cost shows token volume, not dollars.** OpenRouter's per-model rates move independently of
   this repo, so the session cost card reports the tokens it measured and leaves the billing
   figure to your OpenRouter activity page rather than printing a confidently wrong number.
+
+## xAI (Grok agent and speech-to-text)
+
+**xAI** works as an agent provider and as a speech engine, with one key for both (`apiKeys.xai`). It comes from [autopreso#24](https://github.com/kunchenguid/autopreso/pull/24) by Julien Talbot, who ran it against the live API. In Mic Draw it is checked against xAI's docs only and has not been verified live yet.
+
+- **Agent.** Pick **xAI** in the agent panel, paste the key and type a model id; the default is `grok-4.3`. Requests go to xAI's OpenAI-compatible Chat Completions API (`https://api.x.ai/v1`). As with OpenRouter, no `reasoningEffort` is sent. The session cost card prices the Grok models in its rate table and shows `n/a` for others.
+- **Speech.** Pick **xAI** in the Voice panel. It streams to `grok-voice-transcribe-2.0` over a WebSocket. xAI's Smart Turn decides when a thought is finished: a pause it is unsure about only settles a chunk, and after 1.2 s of silence the turn ends anyway. Text on the staging board becomes `keyterm` hints, as with Deepgram. Stop sends `finalize`, so the last words arrive before the turn is queued. Streaming costs $0.20 per hour of audio.
 
 ## Credits
 

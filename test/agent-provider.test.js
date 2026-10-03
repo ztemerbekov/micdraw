@@ -45,3 +45,16 @@ test("createWhiteboardAgentModel uses the configured OpenAI base URL", () => {
     "https://gateway.example.test/v1/responses",
   );
 });
+
+test("createWhiteboardAgentModel creates an xAI chat model", () => {
+  const model = createWhiteboardAgentModel({
+    provider: "xai",
+    model: "grok-4.3",
+    baseURL: "https://api.x.ai/v1",
+    apiKey: "xai-key",
+  });
+
+  // Chat Completions: the API upstream autopreso#24 ran its live tool-calling check against.
+  assert.equal(model.provider, "xai.chat");
+  assert.equal(model.modelId, "grok-4.3");
+});

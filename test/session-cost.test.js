@@ -200,3 +200,15 @@ test("computeTranscriptionCost prices gpt-live-transcribe by the minute", () => 
   const cost = computeTranscriptionCost({ provider: "openai", model: "gpt-live-transcribe", seconds: 600 });
   assert.equal(cost.cost.toFixed(4), (0.017 * 10).toFixed(4));
 });
+
+test("xAI prices come from xAI's docs: Grok per 1M tokens, streaming speech per hour", () => {
+  // xAI list prices, October 2026, for prompts under 200k tokens:
+  // grok-4.3 $1.25 / $0.20 cached / $2.50 output; grok-4.7 $2.00 / $0.50 / $6.00.
+  const usage = { input: 2_000_000, cached: 1_000_000, output: 1_000_000, reasoning: 0 };
+  assert.equal(computeAgentCost({ provider: "xai", model: "grok-4.3", usage }).cost.toFixed(6), (1.25 + 0.20 + 2.50).toFixed(6));
+  assert.equal(computeAgentCost({ provider: "xai", model: "grok-4.7", usage }).cost.toFixed(6), (2.00 + 0.50 + 6.00).toFixed(6));
+  // Streaming speech-to-text: $0.20 per hour of audio.
+  const speech = computeTranscriptionCost({ provider: "xai", model: "grok-voice-transcribe-2.0", seconds: 3600 });
+  assert.equal(speech.priced, true);
+  assert.equal(speech.cost.toFixed(6), (0.20).toFixed(6));
+});

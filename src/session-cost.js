@@ -1,6 +1,6 @@
 // Session cost tracking. The numbers in AGENT_PRICING / TRANSCRIPTION_PRICING
-// are OpenAI list pricing as of October 2026 - update them in one place if OpenAI
-// changes its rate card. Local providers (local, moonshine, ollama) are billed at
+// are the vendors' list prices as of October 2026 - update them in one place if a
+// vendor changes its rate card. Local providers (local, moonshine, ollama) are billed at
 // $0; codex routes through the user's ChatGPT subscription so it isn't
 // billed per-token here either.
 
@@ -21,6 +21,16 @@ export const AGENT_PRICING = {
     "gpt-5.4":      { input: 2.50, cachedInput: 0.25,  output: 15.00 },
     "gpt-5.4-mini": { input: 0.75, cachedInput: 0.075, output:  4.50 },
   },
+  // xAI list prices, October 2026, for prompts under 200k tokens; longer
+  // prompts cost twice as much, and a whiteboard turn stays well under that.
+  xai: {
+    "grok-4.3":                     { input: 1.25, cachedInput: 0.20, output: 2.50 },
+    "grok-4.20-0309-non-reasoning": { input: 1.25, cachedInput: 0.20, output: 2.50 },
+    "grok-4.20-0309-reasoning":     { input: 1.25, cachedInput: 0.20, output: 2.50 },
+    "grok-4.5":                     { input: 2.00, cachedInput: 0.30, output: 6.00 },
+    "grok-4.6":                     { input: 2.00, cachedInput: 0.50, output: 6.00 },
+    "grok-4.7":                     { input: 2.00, cachedInput: 0.50, output: 6.00 },
+  },
 };
 
 // Per minute of audio sent, USD.
@@ -38,6 +48,10 @@ export const TRANSCRIPTION_PRICING = {
     "nova-3":         0.0077,
     "nova-3-general": 0.0077,
     "nova-2":         0.0059,
+  },
+  // xAI streaming speech-to-text: $0.20 per hour of audio.
+  xai: {
+    "grok-voice-transcribe-2.0": 0.20 / 60,
   },
 };
 

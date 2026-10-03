@@ -21,6 +21,13 @@ const OPENAI_REASONING_EFFORTS = new Set(["low", "medium", "high", "xhigh", "max
 export const DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 export const DEFAULT_OPENROUTER_AGENT_MODEL = "x-ai/grok-4.20";
 
+// xAI directly, through its OpenAI-compatible API. Ported from upstream
+// autopreso#24, whose author checked tool calling against the live API; here
+// it is checked against xAI's docs only (#17). grok-4.3 is that PR's default
+// and costs the same per token as grok-4.20.
+export const DEFAULT_XAI_BASE_URL = "https://api.x.ai/v1";
+export const DEFAULT_XAI_AGENT_MODEL = "grok-4.3";
+
 export function defaultWhiteboardAgentProvider(options = {}) {
   return {
     provider: "openai",
@@ -62,6 +69,18 @@ export function resolveAgentProviderFromSettings({ settings, env = process.env }
       baseURL: withoutTrailingSlash(
         cleanEnvValue(settings.agent?.openrouter?.baseURL) ?? DEFAULT_OPENROUTER_BASE_URL,
       ),
+    };
+  }
+
+  if (provider === "xai") {
+    const apiKey = (settings.apiKeys?.xai ?? "").trim() || cleanEnvValue(env.XAI_API_KEY);
+    if (!apiKey) throw new Error("xAI API key is not configured. Add it in the agent settings.");
+    // No `reasoningEffort`, as for OpenRouter: it is an OpenAI provider option.
+    return {
+      provider: "xai",
+      model: (settings.agent?.xai?.model ?? "").trim() || DEFAULT_XAI_AGENT_MODEL,
+      apiKey,
+      baseURL: withoutTrailingSlash(cleanEnvValue(settings.agent?.xai?.baseURL) ?? DEFAULT_XAI_BASE_URL),
     };
   }
 
@@ -122,6 +141,17 @@ export function createWhiteboardAgentModel(agentProvider) {
     // API, and it is the same shape the OpenAI path sends, so tool calls and
     // message reshaping behave identically.
     return openrouter.responses(agentProvider.model);
+  }
+
+  if (agentProvider.provider === "xai") {
+    const xai = createOpenAI({
+      name: "xai",
+      baseURL: agentProvider.baseURL,
+      apiKey: agentProvider.apiKey,
+    });
+    // Chat Completions rather than Responses: it is the API upstream
+    // autopreso#24 ran its live tool-calling check against.
+    return xai.chat(agentProvider.model);
   }
 
   if (agentProvider.provider === "codex") {

@@ -36,6 +36,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
     codex: { model: "gpt-6.1-sol", fast: true, baseURL: "https://chatgpt.com/backend-api/codex" },
     ollama: { model: "", baseURL: "http://localhost:11434/v1" },
     openrouter: { model: "x-ai/grok-4.20", baseURL: "https://openrouter.ai/api/v1" },
+    // xAI directly, through its OpenAI-compatible API (#17).
+    xai: { model: "grok-4.3", baseURL: "https://api.x.ai/v1" },
   },
   transcription: {
     // "local" picks a model by language and platform (src/local-models.js);
@@ -58,6 +60,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
     openai: "",
     deepgram: "",
     openrouter: "",
+    // One xAI key serves both the agent and speech-to-text.
+    xai: "",
   },
   agentInstructions: "",
 });
@@ -118,6 +122,7 @@ export function createSettingsStore({ filePath, env = process.env, readCodexAuth
       hasOpenAIKey: Boolean(apiKeys?.openai),
       hasDeepgramKey: Boolean(apiKeys?.deepgram),
       hasOpenRouterKey: Boolean(apiKeys?.openrouter),
+      hasXaiKey: Boolean(apiKeys?.xai),
     };
   }
 
@@ -227,18 +232,30 @@ function seedFromEnv(settings, env, readCodexAuth) {
   const openrouterBaseURL = trimOrEmpty(env.OPENROUTER_BASE_URL);
   if (openrouterBaseURL) next.agent.openrouter.baseURL = openrouterBaseURL;
 
+  const xaiKey = trimOrEmpty(env.XAI_API_KEY);
+  if (xaiKey) next.apiKeys.xai = xaiKey;
+
+  const xaiModel = trimOrEmpty(env.XAI_MODEL);
+  if (xaiModel) next.agent.xai.model = xaiModel;
+
+  const xaiBaseURL = trimOrEmpty(env.XAI_BASE_URL);
+  if (xaiBaseURL) next.agent.xai.baseURL = xaiBaseURL;
+
   const codexAuth = safeReadCodexAuth(readCodexAuth, env);
   // An explicit OpenRouter key is a deliberate choice of a non-OpenAI agent, so
   // it outranks a Codex login that happens to be lying around.
   if (openrouterKey) next.agent.provider = "openrouter";
   else if (codexAuth) next.agent.provider = "codex";
   else if (ollamaModel) next.agent.provider = "ollama";
+  // Like an OpenRouter key, an xAI key is a deliberate pick of a non-OpenAI agent.
+  else if (xaiKey) next.agent.provider = "xai";
   else next.agent.provider = "openai";
 
   // Deepgram outranks OpenAI for speech: a box with both keys set has gone out
   // of its way to configure the dedicated STT vendor.
   if (deepgramKey) next.transcription.provider = "deepgram";
   else if (openaiKey) next.transcription.provider = "openai";
+  else if (xaiKey) next.transcription.provider = "xai";
 
   return next;
 }
@@ -262,7 +279,7 @@ export function validateAgentInstructions(value) {
   }
 }
 
-const TRANSCRIPTION_PROVIDERS = ["local", "moonshine", "openai", "deepgram"];
+const TRANSCRIPTION_PROVIDERS = ["local", "moonshine", "openai", "deepgram", "xai"];
 
 function validateTranscription(transcription, current = {}) {
   if (!transcription || typeof transcription !== "object") return;
@@ -287,7 +304,7 @@ function validateTranscription(transcription, current = {}) {
 
 // An empty base URL means "use the provider default".
 function validateBaseURLs(partial) {
-  for (const provider of ["openai", "codex", "ollama", "openrouter"]) {
+  for (const provider of ["openai", "codex", "ollama", "openrouter", "xai"]) {
     const value = partial?.agent?.[provider]?.baseURL;
     if (value === undefined || value === null) continue;
     if (typeof value !== "string" || !isHttpUrlOrEmpty(value)) {

@@ -28,6 +28,7 @@ import { broadcast, createWhiteboardSession } from "./whiteboard-session.js";
 import { detectMalformedLayoutWarnings, fitShapesToLabels, normalizeWhiteboardElements } from "./whiteboard-elements.js";
 import { extractWhiteboardKeywords } from "./whiteboard-keywords.js";
 import { applyWhiteboardEditOperations, formatLineNumberedWhiteboard } from "./whiteboard-tools.js";
+import { XAI_STT_MODEL, createXaiTranscription as createDefaultXaiTranscription } from "./xai-transcription.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, "..", "public");
@@ -82,6 +83,7 @@ export async function startServer(options) {
         local: transcriptionLanguages("local"),
         openai: transcriptionLanguages("openai"),
         deepgram: transcriptionLanguages("deepgram"),
+        xai: transcriptionLanguages("xai"),
       },
       localModels: localModelSummaries(options.platform ?? process.platform),
     });
@@ -285,6 +287,9 @@ export function resolveTranscriptionEngine(transcription, platform = process.pla
     const model = transcription.deepgram?.model ?? "";
     return { kind: "deepgram", provider, model, label: `Deepgram ${model}`.trim(), language: transcription.language };
   }
+  if (provider === "xai") {
+    return { kind: "xai", provider, model: XAI_STT_MODEL, label: `xAI ${XAI_STT_MODEL}`, language: transcription.language };
+  }
   if (provider === "moonshine") {
     const model = transcription.moonshine?.model ?? "medium";
     return { kind: "moonshine", provider, model, label: `Moonshine ${model}`, moonshineModel: model };
@@ -306,6 +311,7 @@ const ENGINE_FACTORIES = {
   deepgram: createDefaultDeepgramTranscription,
   moonshine: createDefaultMoonshineTranscription,
   sherpa: createDefaultSherpaTranscription,
+  xai: createDefaultXaiTranscription,
 };
 
 /**
@@ -370,6 +376,7 @@ async function createTranscriptionManager({ options, wss, queueTranscript, state
         // Deepgram gets its own key so the STT vendor and the agent vendor can
         // be different accounts.
         DEEPGRAM_API_KEY: settings.apiKeys?.deepgram || (options.env ?? process.env).DEEPGRAM_API_KEY,
+        XAI_API_KEY: settings.apiKeys?.xai || (options.env ?? process.env).XAI_API_KEY,
       },
     };
   }
