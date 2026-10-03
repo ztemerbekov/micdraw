@@ -150,3 +150,28 @@ test("fitShapesToLabels still grows a shape that sits inside a larger container 
   const fitted = fitShapesToLabels([lane, card]);
   assert.deepEqual(fitted, [lane, { ...card, x: 33, width: 383 }]);
 });
+
+test("detectMalformedLayoutWarnings flags elements that share an id, by line number", () => {
+  const card = (id, x) => ({ type: "rectangle", id, x, y: 100, width: 200, height: 80 });
+  const warnings = detectMalformedLayoutWarnings([
+    { type: "text", id: "title", x: 0, y: 0, text: "Pipeline", fontSize: 24 },
+    card("publish", 0),
+    { type: "arrow", id: "publish-to-review", x: 200, y: 140, width: 100, height: 0 },
+    card("publish", 300),
+    card("review", 600),
+    card("review", 900),
+    card("review", 1200),
+  ]);
+  assert.equal(warnings.length, 2);
+  assert.match(warnings[0], /lines 2 and 4 share id "publish"/);
+  assert.match(warnings[1], /lines 5, 6 and 7 share id "review"/);
+  assert.match(warnings[0], /new id/);
+});
+
+test("detectMalformedLayoutWarnings does not count elements without an id as duplicates", () => {
+  const warnings = detectMalformedLayoutWarnings([
+    { type: "text", x: 0, y: 0, text: "One", fontSize: 24 },
+    { type: "text", x: 0, y: 200, text: "Two", fontSize: 24 },
+  ]);
+  assert.deepEqual(warnings, []);
+});

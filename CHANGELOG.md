@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- When an edit leaves two elements with the same id, the agent gets a warning naming their lines and fixes it on its next step, instead of leaving a stray copy on the board.
+
 ## 0.2.0 (2026-10-03)
 
 The first release as Mic Draw.
