@@ -490,7 +490,10 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
   // NOT consult this - we paid for the tokens regardless.
   // (Tests/scaffolds without a session token are treated as always-active.)
   const mySession = state.session ?? { active: true };
-  const preview = createEditPreview({ state, wss, mySession });
+  // Aborted when the turn times out: the model call stops, and an edit the
+  // model still gets out must not land after the turn has given up.
+  const turn = new AbortController();
+  const preview = createEditPreview({ state, wss, mySession, turnSignal: turn.signal });
   // Only attach the live screenshot when the canvas has been edited since the
   // last attach. On DONE-only turns nothing changed, so the screenshot adds
   // ~7-10k tokens of noise without giving the agent new visual info.
@@ -539,6 +542,7 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
   const agentCallOptions = {
     model: createWhiteboardAgentModel(agentProvider),
     providerOptions: createWhiteboardAgentProviderOptions(agentProvider, effectiveSystem),
+    abortSignal: turn.signal,
     stopWhen: [stepCountIs(4), editLandedCleanly],
     system: effectiveSystem,
     messages,
@@ -550,6 +554,7 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
         }),
         execute: async ({ elements }) => {
           if (!mySession.active) return STALE_SESSION_TOOL_RESULT;
+          if (turn.signal.aborted) return TIMED_OUT_TOOL_RESULT;
           options.onAgentEvent?.({ type: "tool:start", tool: "whiteboard_overwrite", input: { elements }, timestamp: new Date().toISOString() });
           const normalizedElements = fitShapesToLabels(normalizeWhiteboardElements(elements));
           state.elements = normalizedElements;
@@ -574,6 +579,7 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
         }),
         execute: async ({ operations, viewport }) => {
           if (!mySession.active) return STALE_SESSION_TOOL_RESULT;
+          if (turn.signal.aborted) return TIMED_OUT_TOOL_RESULT;
           const hasOps = Array.isArray(operations) && operations.length > 0;
           const hasViewport = viewport && typeof viewport === "object";
           if (!hasOps && !hasViewport) {
@@ -637,6 +643,7 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
       runWhiteboardAgentGeneration(agentProvider, agentCallOptions, { generateTextFn, streamTextFn, onChunk: preview.onChunk }),
       options.agentTimeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS,
       "Whiteboard agent timed out",
+      () => turn.abort(),
     );
   } finally {
     preview.settle();
@@ -676,13 +683,14 @@ function editLandedCleanly({ steps }) {
 // either way - what matters is that we did not mutate state.elements or
 // broadcast a whiteboard:update for the late edit.
 const STALE_SESSION_TOOL_RESULT = "Session has ended; the requested edit was not applied.";
+const TIMED_OUT_TOOL_RESULT = "This turn timed out; the requested edit was not applied.";
 
 // Draws a whiteboard edit while the model is still writing it. An operation
 // (or, for an overwrite, an element) is shown as soon as the model moves on to
 // the next one, so nothing half-written reaches the page. The tool's execute
 // still applies the finished call; if it never does, settle() puts the real
 // board back.
-function createEditPreview({ state, wss, mySession }) {
+function createEditPreview({ state, wss, mySession, turnSignal }) {
   const calls = new Map();
   let unconfirmed = false;
   return {
@@ -694,7 +702,7 @@ function createEditPreview({ state, wss, mySession }) {
       }
       if (chunk.type !== "tool-input-delta") return;
       const call = calls.get(chunk.id);
-      if (!call || !call.scanner.push(chunk.delta) || !mySession.active) return;
+      if (!call || !call.scanner.push(chunk.delta) || !mySession.active || turnSignal.aborted) return;
       let elements;
       try {
         elements = call.toolName === "whiteboard_apply" ? applyWhiteboardEditOperations(call.base, call.scanner.items) : call.scanner.items;
@@ -1145,10 +1153,13 @@ export function reshapeMessagesForCodex(messages) {
   return messages;
 }
 
-function withTimeout(promise, timeoutMs, message) {
+function withTimeout(promise, timeoutMs, message, onTimeout = () => {}) {
   let timeout;
   const timeoutPromise = new Promise((_, reject) => {
-    timeout = setTimeout(() => reject(new Error(`${message} after ${timeoutMs}ms.`)), timeoutMs);
+    timeout = setTimeout(() => {
+      onTimeout();
+      reject(new Error(`${message} after ${timeoutMs}ms.`));
+    }, timeoutMs);
   });
 
   return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeout));

@@ -202,6 +202,42 @@ test("runWhiteboardAgent rejects with a timeout instead of hanging forever", asy
   );
 });
 
+test("a timed-out turn is cancelled: the model call is aborted and a late edit does not land", async () => {
+  const broadcasts = [];
+  const state = { elements: [], agentHistory: [] };
+  let signal;
+  let lateResult;
+  let lateEditDone;
+  const lateEdit = new Promise((resolve) => { lateEditDone = resolve; });
+
+  await assert.rejects(
+    () =>
+      runWhiteboardAgent({
+        transcript: "hello",
+        state,
+        wss: { clients: new Set([{ readyState: WebSocket.OPEN, send: (msg) => broadcasts.push(JSON.parse(msg)) }]) },
+        options: { agentTimeoutMs: 20 },
+        generateTextFn: async ({ tools, abortSignal }) => {
+          signal = abortSignal;
+          // The model only gets its edit out after the turn has timed out.
+          await new Promise((resolve) => setTimeout(resolve, 60));
+          lateResult = await tools.whiteboard_apply.execute({
+            operations: [{ type: "insert_after", line: 0, element: { type: "rectangle", id: "late", x: 0, y: 0, width: 100, height: 50 } }],
+          });
+          lateEditDone();
+          return {};
+        },
+      }),
+    /Whiteboard agent timed out/,
+  );
+  await lateEdit;
+
+  assert.equal(signal?.aborted, true);
+  assert.match(lateResult, /not applied/);
+  assert.deepEqual(state.elements, []);
+  assert.deepEqual(broadcasts.filter((message) => message.type === "whiteboard:update"), []);
+});
+
 test("runWhiteboardAgent exposes whiteboard_apply that combines edits and viewport in one call", async () => {
   const broadcasts = [];
   const state = {
