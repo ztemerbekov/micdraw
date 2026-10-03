@@ -19,6 +19,10 @@ const OPENAI_TRANSCRIPTION_MODELS = [
   "whisper-1",
 ];
 const MOONSHINE_MODELS = ["tiny", "small", "medium"];
+const DEEPGRAM_TRANSCRIPTION_MODELS = ["nova-3", "nova-2"];
+// Free-text, not a dropdown: OpenRouter's catalogue changes weekly and a fixed
+// list here would be wrong within the month.
+const OPENROUTER_MODEL_PLACEHOLDER = "e.g. x-ai/grok-4.20";
 const MIC_STORAGE_KEY = "micdraw.mic";
 const PANEL_HIDDEN_STORAGE_KEY = "micdraw.panelHidden";
 
@@ -1147,6 +1151,9 @@ function costValue(entry) {
     // per-token dollar cost we can report. Show usage volume instead so the
     // panel still surfaces "is the agent doing work?".
     if (entry.reason === "subscription") return formatTokenCount(entry.tokens);
+    // Metered, but at a rate this app does not track (OpenRouter). Same
+    // treatment: show the volume rather than a dollar figure we'd be inventing.
+    if (entry.reason === "unpriced") return formatTokenCount(entry.tokens);
     return "n/a";
   }
   return formatUsd(entry.cost ?? 0);
@@ -1245,12 +1252,16 @@ function agentModelLabel(settings) {
   const provider = settings.agent.provider;
   if (provider === "ollama") return settings.agent.ollama.model || "(unset)";
   if (provider === "codex") return settings.agent.codex.model;
+  if (provider === "openrouter")
+    return settings.agent.openrouter?.model || "(unset)";
   return settings.agent.openai.model;
 }
 
 function sttModelLabel(settings) {
   if (settings.transcription.provider === "moonshine")
     return settings.transcription.moonshine.model;
+  if (settings.transcription.provider === "deepgram")
+    return settings.transcription.deepgram?.model || "(unset)";
   return settings.transcription.openai.model;
 }
 
@@ -1380,28 +1391,45 @@ function AgentEditor({ settings, onSave, onCancel }) {
   const [ollamaBaseURL, setOllamaBaseURL] = React.useState(
     settings.agent.ollama.baseURL,
   );
+  const [openrouterModel, setOpenrouterModel] = React.useState(
+    settings.agent.openrouter?.model ?? "",
+  );
+  const [openrouterBaseURL, setOpenrouterBaseURL] = React.useState(
+    settings.agent.openrouter?.baseURL ?? "",
+  );
+  const [openrouterKey, setOpenrouterKey] = React.useState("");
   const [openaiKey, setOpenaiKey] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [errorText, setErrorText] = React.useState("");
 
   const needsOpenAIKey =
     provider === "openai" && !settings.hasOpenAIKey && !openaiKey;
+  const needsOpenRouterKey =
+    provider === "openrouter" && !settings.hasOpenRouterKey && !openrouterKey;
 
   async function submit() {
     setBusy(true);
     setErrorText("");
-    const patch = { agent: { provider, openai: {}, codex: {}, ollama: {} } };
+    const patch = {
+      agent: { provider, openai: {}, codex: {}, ollama: {}, openrouter: {} },
+    };
     if (provider === "openai") {
       patch.agent.openai.model = openaiModel;
       patch.agent.openai.reasoningEffort = reasoningEffort;
       patch.agent.openai.baseURL = openaiBaseURL;
     } else if (provider === "codex") {
       patch.agent.codex.model = codexModel;
+    } else if (provider === "openrouter") {
+      patch.agent.openrouter.model = openrouterModel;
+      patch.agent.openrouter.baseURL = openrouterBaseURL;
     } else {
       patch.agent.ollama.model = ollamaModel;
       patch.agent.ollama.baseURL = ollamaBaseURL;
     }
-    if (openaiKey) patch.apiKeys = { openai: openaiKey };
+    const apiKeys = {};
+    if (openaiKey) apiKeys.openai = openaiKey;
+    if (openrouterKey) apiKeys.openrouter = openrouterKey;
+    if (Object.keys(apiKeys).length > 0) patch.apiKeys = apiKeys;
     try {
       await onSave(patch);
     } catch (error) {
@@ -1424,9 +1452,47 @@ function AgentEditor({ settings, onSave, onCancel }) {
         },
         React.createElement("option", { value: "openai" }, "OpenAI"),
         React.createElement("option", { value: "codex" }, "Codex"),
+        React.createElement("option", { value: "openrouter" }, "OpenRouter"),
         React.createElement("option", { value: "ollama" }, "Ollama"),
       ),
     ),
+    provider === "openrouter"
+      ? field(
+          "Model",
+          React.createElement("input", {
+            type: "text",
+            value: openrouterModel,
+            onChange: (e) => setOpenrouterModel(e.target.value),
+            placeholder: OPENROUTER_MODEL_PLACEHOLDER,
+            disabled: busy,
+          }),
+        )
+      : null,
+    provider === "openrouter"
+      ? field(
+          "API key",
+          React.createElement("input", {
+            type: "password",
+            value: openrouterKey,
+            onChange: (e) => setOpenrouterKey(e.target.value),
+            placeholder: settings.hasOpenRouterKey
+              ? "configured (enter to replace)"
+              : "sk-or-...",
+            disabled: busy,
+          }),
+        )
+      : null,
+    provider === "openrouter"
+      ? field(
+          "Base URL",
+          React.createElement("input", {
+            type: "text",
+            value: openrouterBaseURL,
+            onChange: (e) => setOpenrouterBaseURL(e.target.value),
+            disabled: busy,
+          }),
+        )
+      : null,
     provider === "openai"
       ? field(
           "Model",
@@ -1516,7 +1582,10 @@ function AgentEditor({ settings, onSave, onCancel }) {
       ),
       React.createElement(
         "button",
-        { onClick: submit, disabled: busy || needsOpenAIKey },
+        {
+          onClick: submit,
+          disabled: busy || needsOpenAIKey || needsOpenRouterKey,
+        },
         busy ? "Saving..." : "Save",
       ),
     ),
@@ -1533,21 +1602,42 @@ function TranscriptionEditor({ settings, onSave, onCancel }) {
   const [openaiModel, setOpenaiModel] = React.useState(
     settings.transcription.openai.model,
   );
+  const [deepgramModel, setDeepgramModel] = React.useState(
+    settings.transcription.deepgram?.model ?? DEEPGRAM_TRANSCRIPTION_MODELS[0],
+  );
+  const [deepgramKeyterms, setDeepgramKeyterms] = React.useState(
+    (settings.transcription.deepgram?.keyterms ?? []).join(", "),
+  );
+  const [deepgramKey, setDeepgramKey] = React.useState("");
   const [openaiKey, setOpenaiKey] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [errorText, setErrorText] = React.useState("");
 
   const needsOpenAIKey =
     provider === "openai" && !settings.hasOpenAIKey && !openaiKey;
+  const needsDeepgramKey =
+    provider === "deepgram" && !settings.hasDeepgramKey && !deepgramKey;
 
   async function submit() {
     setBusy(true);
     setErrorText("");
-    const patch = { transcription: { provider, moonshine: {}, openai: {} } };
+    const patch = {
+      transcription: { provider, moonshine: {}, openai: {}, deepgram: {} },
+    };
     if (provider === "moonshine")
       patch.transcription.moonshine.model = moonshineModel;
     if (provider === "openai") patch.transcription.openai.model = openaiModel;
-    if (openaiKey) patch.apiKeys = { openai: openaiKey };
+    if (provider === "deepgram") {
+      patch.transcription.deepgram.model = deepgramModel;
+      patch.transcription.deepgram.keyterms = deepgramKeyterms
+        .split(",")
+        .map((term) => term.trim())
+        .filter(Boolean);
+    }
+    const apiKeys = {};
+    if (openaiKey) apiKeys.openai = openaiKey;
+    if (deepgramKey) apiKeys.deepgram = deepgramKey;
+    if (Object.keys(apiKeys).length > 0) patch.apiKeys = apiKeys;
     try {
       await onSave(patch);
     } catch (error) {
@@ -1574,8 +1664,46 @@ function TranscriptionEditor({ settings, onSave, onCancel }) {
           "Moonshine (local)",
         ),
         React.createElement("option", { value: "openai" }, "OpenAI Realtime"),
+        React.createElement("option", { value: "deepgram" }, "Deepgram"),
       ),
     ),
+    provider === "deepgram"
+      ? field(
+          "Model",
+          select(
+            deepgramModel,
+            setDeepgramModel,
+            DEEPGRAM_TRANSCRIPTION_MODELS,
+            busy,
+          ),
+        )
+      : null,
+    provider === "deepgram"
+      ? field(
+          "API key",
+          React.createElement("input", {
+            type: "password",
+            value: deepgramKey,
+            onChange: (e) => setDeepgramKey(e.target.value),
+            placeholder: settings.hasDeepgramKey
+              ? "configured (enter to replace)"
+              : "Deepgram API key",
+            disabled: busy,
+          }),
+        )
+      : null,
+    provider === "deepgram"
+      ? field(
+          "Key terms",
+          React.createElement("input", {
+            type: "text",
+            value: deepgramKeyterms,
+            onChange: (e) => setDeepgramKeyterms(e.target.value),
+            placeholder: "comma-separated, e.g. Kubernetes, gRPC",
+            disabled: busy,
+          }),
+        )
+      : null,
     provider === "moonshine"
       ? field(
           "Model",
@@ -1630,7 +1758,10 @@ function TranscriptionEditor({ settings, onSave, onCancel }) {
       ),
       React.createElement(
         "button",
-        { onClick: submit, disabled: busy || needsOpenAIKey },
+        {
+          onClick: submit,
+          disabled: busy || needsOpenAIKey || needsDeepgramKey,
+        },
         busy ? "Saving..." : "Save",
       ),
     ),

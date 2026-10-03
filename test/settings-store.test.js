@@ -185,11 +185,13 @@ test("createSettingsStore.save rejects base URLs that are not http or https", as
   }
   await assert.rejects(store.save({ agent: { codex: { baseURL: "file:///tmp/codex" } } }), /base URL/);
   await assert.rejects(store.save({ agent: { ollama: { baseURL: "file:///tmp/ollama" } } }), /base URL/);
+  await assert.rejects(store.save({ agent: { openrouter: { baseURL: "file:///tmp/openrouter" } } }), /base URL/);
 
   const settings = await store.load();
   assert.equal(settings.agent.openai.baseURL, DEFAULT_SETTINGS.agent.openai.baseURL);
   assert.equal(settings.agent.codex.baseURL, DEFAULT_SETTINGS.agent.codex.baseURL);
   assert.equal(settings.agent.ollama.baseURL, DEFAULT_SETTINGS.agent.ollama.baseURL);
+  assert.equal(settings.agent.openrouter.baseURL, DEFAULT_SETTINGS.agent.openrouter.baseURL);
 });
 
 test("createSettingsStore.save accepts http, https and empty base URLs", async () => {
@@ -206,4 +208,102 @@ test("createSettingsStore.save accepts http, https and empty base URLs", async (
   const settings = await store.load();
   assert.equal(settings.agent.openai.baseURL, "");
   assert.equal(settings.agent.ollama.baseURL, "http://192.168.1.20:11434/v1");
+});
+
+test("createSettingsStore ships Deepgram and OpenRouter defaults", async () => {
+  const store = createSettingsStore({ filePath: await tempPath(), env: {}, readCodexAuth: noCodexAuth });
+  const settings = await store.load();
+  assert.equal(settings.transcription.deepgram.model, "nova-3");
+  assert.deepEqual(settings.transcription.deepgram.keyterms, []);
+  assert.equal(settings.agent.openrouter.model, "x-ai/grok-4.20");
+  assert.equal(settings.agent.openrouter.baseURL, "https://openrouter.ai/api/v1");
+  assert.equal(settings.apiKeys.deepgram, "");
+  assert.equal(settings.apiKeys.openrouter, "");
+});
+
+test("createSettingsStore seeds the Deepgram key and model from env, and selects Deepgram STT", async () => {
+  const store = createSettingsStore({
+    filePath: await tempPath(),
+    env: { DEEPGRAM_API_KEY: "dg-env", DEEPGRAM_MODEL: "nova-2" },
+    readCodexAuth: noCodexAuth,
+  });
+  const settings = await store.load();
+  assert.equal(settings.apiKeys.deepgram, "dg-env");
+  assert.equal(settings.transcription.deepgram.model, "nova-2");
+  assert.equal(settings.transcription.provider, "deepgram");
+});
+
+test("a Deepgram key outranks an OpenAI key for speech, and each keeps its own key", async () => {
+  const store = createSettingsStore({
+    filePath: await tempPath(),
+    env: { DEEPGRAM_API_KEY: "dg-env", OPENAI_API_KEY: "sk-env" },
+    readCodexAuth: noCodexAuth,
+  });
+  const settings = await store.load();
+  assert.equal(settings.transcription.provider, "deepgram");
+  // The two vendors are separate accounts: neither key may stand in for the other.
+  assert.equal(settings.apiKeys.deepgram, "dg-env");
+  assert.equal(settings.apiKeys.openai, "sk-env");
+});
+
+test("createSettingsStore seeds OpenRouter from env and selects it as the agent", async () => {
+  const store = createSettingsStore({
+    filePath: await tempPath(),
+    env: {
+      OPENROUTER_API_KEY: "sk-or-env",
+      OPENROUTER_MODEL: "x-ai/grok-4.20",
+      OPENROUTER_BASE_URL: "https://proxy.example.test/api/v1",
+    },
+    readCodexAuth: noCodexAuth,
+  });
+  const settings = await store.load();
+  assert.equal(settings.apiKeys.openrouter, "sk-or-env");
+  assert.equal(settings.agent.provider, "openrouter");
+  assert.equal(settings.agent.openrouter.model, "x-ai/grok-4.20");
+  assert.equal(settings.agent.openrouter.baseURL, "https://proxy.example.test/api/v1");
+});
+
+test("an explicit OpenRouter key outranks a Codex login for the agent", async () => {
+  const store = createSettingsStore({
+    filePath: await tempPath(),
+    env: { OPENROUTER_API_KEY: "sk-or-env" },
+    readCodexAuth: () => ({
+      tokens: {},
+      accessToken: "codex-token",
+      refreshToken: "codex-refresh",
+      accountId: "codex-account",
+    }),
+  });
+  const settings = await store.load();
+  assert.equal(settings.agent.provider, "openrouter");
+});
+
+test("getSanitized reports the new keys as booleans and never returns their values", async () => {
+  const store = createSettingsStore({
+    filePath: await tempPath(),
+    env: { DEEPGRAM_API_KEY: "dg-secret", OPENROUTER_API_KEY: "sk-or-secret" },
+    readCodexAuth: noCodexAuth,
+  });
+  await store.load();
+  const sanitized = await store.getSanitized();
+  assert.equal(sanitized.hasDeepgramKey, true);
+  assert.equal(sanitized.hasOpenRouterKey, true);
+  assert.equal(sanitized.hasOpenAIKey, false);
+  assert.equal("apiKeys" in sanitized, false);
+  const serialized = JSON.stringify(sanitized);
+  assert.equal(serialized.includes("dg-secret"), false);
+  assert.equal(serialized.includes("sk-or-secret"), false);
+});
+
+test("saving keyterms replaces the array rather than merging it", async () => {
+  const filePath = await tempPath();
+  const store = createSettingsStore({ filePath, env: {}, readCodexAuth: noCodexAuth });
+  await store.load();
+  await store.save({ transcription: { deepgram: { keyterms: ["gRPC", "Envoy"] } } });
+  const afterFirst = await store.load();
+  assert.deepEqual(afterFirst.transcription.deepgram.keyterms, ["gRPC", "Envoy"]);
+
+  await store.save({ transcription: { deepgram: { keyterms: ["Kubernetes"] } } });
+  const afterSecond = await store.load();
+  assert.deepEqual(afterSecond.transcription.deepgram.keyterms, ["Kubernetes"]);
 });
