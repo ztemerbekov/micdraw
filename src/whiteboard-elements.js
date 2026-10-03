@@ -138,5 +138,21 @@ export function detectMalformedLayoutWarnings(elements) {
     }
   }
 
+  // 3. Two elements with one id. Arrows bind to an element by id, so a second
+  // element with that id is ambiguous. A miscounted line-number edit leaves
+  // such a copy behind (#52).
+  const linesById = new Map();
+  elements.forEach((element, index) => {
+    if (typeof element?.id !== "string" || element.id === "") return;
+    linesById.set(element.id, [...(linesById.get(element.id) ?? []), index + 1]);
+  });
+  for (const [id, lines] of linesById) {
+    if (lines.length < 2) continue;
+    const listed = `${lines.slice(0, -1).join(", ")} and ${lines.at(-1)}`;
+    warnings.push(
+      `DUPLICATE ID WARNING: lines ${listed} share id "${id}". Every element needs its own id: give the extra element a new id, or delete it if it is a stray copy.`,
+    );
+  }
+
   return warnings;
 }
