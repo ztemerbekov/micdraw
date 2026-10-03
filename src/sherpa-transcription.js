@@ -33,13 +33,19 @@ export function createSherpaTranscription({
     }
   }
 
+  // The page gets every whole percent; the console log every 10%.
   function reportProgress() {
-    let reported = 0;
+    let lastPercent = -1;
+    let logged = 0;
     return ({ receivedBytes, totalBytes }) => {
-      const percent = Math.floor((receivedBytes / totalBytes) * 10) * 10;
-      if (percent > reported) {
-        reported = percent;
-        options.onStatus?.(`Downloading ${model.label}: ${percent}%`);
+      const percent = Math.floor((receivedBytes / totalBytes) * 100);
+      if (percent === lastPercent) return;
+      lastPercent = percent;
+      options.onProgress?.({ receivedBytes, totalBytes });
+      const step = Math.floor(percent / 10) * 10;
+      if (step > logged) {
+        logged = step;
+        options.onStatus?.(`Downloading ${model.label}: ${step}%`);
       }
     };
   }

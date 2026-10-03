@@ -68,11 +68,12 @@ test("websocket clients receive the current agent status on connect", async () =
   });
 
   try {
-    const messages = await collectWebSocketMessages(url.replace("http:", "ws:") + "/ws", 5);
+    const messages = await collectWebSocketMessages(url.replace("http:", "ws:") + "/ws", 6);
     assert.deepEqual(
       messages.map((message) => message.type),
-      ["config", "agent:status", "mode", "warmup", "cost"],
+      ["config", "agent:status", "mode", "warmup", "cost", "transcription:status"],
     );
+    assert.deepEqual(messages[5], { type: "transcription:status", state: "ready", label: "Moonshine medium" });
     assert.equal(messages[1].status, "idle");
     assert.equal(messages[2].mode, "staging");
     assert.equal(messages[3].state, "idle");
