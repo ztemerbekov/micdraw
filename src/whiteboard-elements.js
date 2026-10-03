@@ -1,9 +1,3 @@
-export function normalizeWhiteboardElements(elements) {
-  if (!Array.isArray(elements)) return [];
-
-  return elements;
-}
-
 const SHAPE_TYPES = new Set(["rectangle", "ellipse", "diamond"]);
 const CHAR_WIDTH_RATIO = 0.6;
 // Excalidraw 0.18 keeps 5 px between a label and its container
@@ -98,14 +92,8 @@ export function detectMalformedLayoutWarnings(elements) {
 
   // 1. Standalone text overlapping a shape -> should have been a label.
   for (const text of texts) {
-    if (typeof text.x !== "number" || typeof text.y !== "number") continue;
-    const estimated = estimateTextBox(text.text, text.fontSize);
-    const textBox = {
-      x: text.x,
-      y: text.y,
-      width: typeof text.width === "number" ? text.width : estimated.width,
-      height: typeof text.height === "number" ? text.height : estimated.height,
-    };
+    const textBox = collisionBox(text);
+    if (!textBox) continue;
     for (const shape of shapes) {
       if (typeof shape.width !== "number" || typeof shape.height !== "number") continue;
       if (rectanglesOverlap(textBox, shape)) {
@@ -122,10 +110,7 @@ export function detectMalformedLayoutWarnings(elements) {
   for (const shape of shapes) {
     const labelText = shape?.label?.text;
     if (typeof labelText !== "string" || labelText.length === 0) continue;
-    const fontSize = shape.label.fontSize ?? 18;
-    const estimated = estimateTextBox(labelText, fontSize);
-    const minWidth = estimated.width + LABEL_PADDING * 2;
-    const minHeight = estimated.height + LABEL_PADDING * 2;
+    const { width: minWidth, height: minHeight } = labelledShapeSize(shape, LABEL_PADDING);
     if (typeof shape.width === "number" && shape.width < minWidth) {
       warnings.push(
         `LAYOUT WARNING: shape "${shape.id}" is ${shape.width}px wide but its label "${labelText.slice(0, 40)}" needs about ${minWidth}px (text + padding). Either widen the shape or shorten the label - otherwise the label text will overflow the shape's edges.`,

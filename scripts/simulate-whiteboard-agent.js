@@ -1,19 +1,27 @@
 #!/usr/bin/env node
-import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import net from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 import { WebSocket } from "ws";
 
-import { resolveSimulatorAgentProvider } from "../src/simulator-agent-provider.js";
-import { parseSimulatorArgs } from "../src/simulator-options.js";
+import {
+  CdpClient,
+  evaluateInPage,
+  getAvailablePort,
+  launchChrome,
+  stopChrome,
+  waitForChromeTab,
+  waitForRenderedText,
+} from "./lib/chrome-cdp.js";
+import { resolveSimulatorAgentProvider } from "./lib/simulator-agent-provider.js";
+import { parseSimulatorArgs } from "./lib/simulator-options.js";
 import { startServer, whiteboardSystemPrompt } from "../src/server.js";
-import { chunkTranscriptAtPunctuation } from "../src/transcript-chunker.js";
+import { chunkTranscriptAtPunctuation } from "./lib/transcript-chunker.js";
 
 const __filename = fileURLToPath(import.meta.url);
 
@@ -88,7 +96,18 @@ export async function runSimulation(options, agentProvider) {
 
     chromeUserDataDir = await mkdtemp(path.join(tmpdir(), "micdraw-sim-chrome-"));
     const chromeDebugPort = await getAvailablePort();
-    chrome = launchChrome(options.chromeBin, chromeDebugPort, chromeUserDataDir, server.url);
+    console.error(`Launching headless Chrome on debug port ${chromeDebugPort}.`);
+    chrome = launchChrome(options.chromeBin, {
+      debugPort: chromeDebugPort,
+      userDataDir: chromeUserDataDir,
+      url: server.url,
+      extraArgs: [
+        "--use-fake-ui-for-media-stream",
+        "--use-fake-device-for-media-stream",
+        "--autoplay-policy=no-user-gesture-required",
+        "--window-size=1440,1000",
+      ],
+    });
     const tab = await waitForChromeTab(chromeDebugPort, server.url);
     cdp = await CdpClient.connect(tab.webSocketDebuggerUrl);
     await cdp.request("Page.enable");
@@ -146,26 +165,6 @@ class TrajectoryRecorder {
   }
 }
 
-function launchChrome(chromeBin, debugPort, userDataDir, url) {
-  console.error(`Launching headless Chrome on debug port ${debugPort}.`);
-  return spawn(
-    chromeBin,
-    [
-      "--headless=new",
-      "--disable-gpu",
-      "--no-sandbox",
-      "--use-fake-ui-for-media-stream",
-      "--use-fake-device-for-media-stream",
-      "--autoplay-policy=no-user-gesture-required",
-      `--remote-debugging-port=${debugPort}`,
-      `--user-data-dir=${userDataDir}`,
-      "--window-size=1440,1000",
-      url,
-    ],
-    { stdio: "ignore" },
-  );
-}
-
 async function connectObserver(url, onMessage) {
   const wsUrl = url.replace(/^http/, "ws") + "/ws";
   const ws = new WebSocket(wsUrl);
@@ -178,93 +177,9 @@ async function connectObserver(url, onMessage) {
 }
 
 async function capturePageScreenshot(cdp, filePath) {
-  await evaluateInPage(cdp, `new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(resolve, 250))))`, { awaitPromise: true });
+  await evaluateInPage(cdp, `new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(resolve, 250))))`);
   const response = await cdp.request("Page.captureScreenshot", { format: "png", fromSurface: true });
   await writeFile(filePath, Buffer.from(response.result.data, "base64"));
-}
-
-class CdpClient {
-  constructor(webSocketDebuggerUrl) {
-    this.ws = new WebSocket(webSocketDebuggerUrl);
-    this.nextId = 0;
-    this.pending = new Map();
-    this.ws.on("message", (raw) => {
-      const message = JSON.parse(raw.toString());
-      const deferred = this.pending.get(message.id);
-      if (!deferred) return;
-      this.pending.delete(message.id);
-      if (message.error) deferred.reject(new Error(message.error.message));
-      else deferred.resolve(message);
-    });
-  }
-
-  static async connect(webSocketDebuggerUrl) {
-    const client = new CdpClient(webSocketDebuggerUrl);
-    await new Promise((resolve, reject) => {
-      client.ws.once("open", resolve);
-      client.ws.once("error", reject);
-    });
-    return client;
-  }
-
-  request(method, params = {}) {
-    const id = ++this.nextId;
-    this.ws.send(JSON.stringify({ id, method, params }));
-    return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-    });
-  }
-
-  close() {
-    this.ws.close();
-  }
-}
-
-async function waitForChromeTab(debugPort, url) {
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    try {
-      const tabs = await fetch(`http://127.0.0.1:${debugPort}/json`).then((res) => res.json());
-      const tab = tabs.find((item) => item.url === url || item.url === `${url}/`);
-      if (tab?.webSocketDebuggerUrl) return tab;
-    } catch {
-      // Chrome can take a moment to expose the debugging endpoint.
-    }
-    await sleep(250);
-  }
-  throw new Error("Timed out waiting for Chrome debug tab.");
-}
-
-async function waitForRenderedText(cdp, expectedText) {
-  const deadline = Date.now() + 20_000;
-  let lastText = "";
-  while (Date.now() < deadline) {
-    const response = await evaluateInPage(cdp, "document.body.innerText");
-    lastText = response.result.result.value ?? "";
-    if (lastText.includes(expectedText)) return;
-    await sleep(250);
-  }
-  throw new Error(`Timed out waiting for rendered text: ${expectedText}. Last text: ${lastText}`);
-}
-
-function evaluateInPage(cdp, expression, options = {}) {
-  return cdp.request("Runtime.evaluate", {
-    expression,
-    returnByValue: true,
-    awaitPromise: Boolean(options.awaitPromise),
-  });
-}
-
-function getAvailablePort() {
-  return new Promise((resolve, reject) => {
-    const server = net.createServer();
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      const port = typeof address === "object" && address ? address.port : 0;
-      server.close(() => resolve(port));
-    });
-    server.on("error", reject);
-  });
 }
 
 function closeHttpServer(httpServer) {
@@ -285,18 +200,8 @@ export function estimateTranscriptChunkDelayMs(chunk, { chunkIntervalMs = 0, spe
   return Math.max(chunkIntervalMs, spokenDurationMs);
 }
 
-async function stopChrome(chrome) {
-  if (chrome.exitCode !== null) return;
-  chrome.kill();
-  await Promise.race([new Promise((resolve) => chrome.once("exit", resolve)), sleep(2000)]);
-}
-
 function sanitizeLabel(label) {
   return String(label).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60) || "screenshot";
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function printSuccess({ outDir, chunks, turns, screenshots, finalElements, promptHash }) {

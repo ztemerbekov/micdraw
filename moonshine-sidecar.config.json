@@ -1,7 +1,6 @@
 {
   "moonshineVoiceVersion": "0.0.59",
   "moonshineReleaseTag": "v0.0.59",
-  "pythonVersion": "3.13",
   "targets": [
     {
       "name": "darwin-arm64",

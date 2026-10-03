@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- The OpenAI API key field in the agent and voice settings no longer disappears after the first typed character when no key is saved yet.
+- Losing the connection to the server turns the microphone off. Before, audio kept streaming into the closed connection while the page showed listening as stopped.
+- A drawing made on the staging canvas right after the page loads is no longer wiped by a delayed refresh.
+- The canvas no longer re-renders on every caption, cost and status update, each live screenshot is encoded once instead of twice, and the page loads Excalidraw's minified stylesheet.
+
 ## 0.2.2 (2026-10-03)
 
 - Local transcription adds German, French, Spanish and Mandarin Chinese: Kroko for the first three and a small Zipformer CTC model for Mandarin, all through sherpa-onnx on every platform. On 40 FLEURS clips per language they got 4.3%, 7.7% and 3.5% of words wrong and 11.7% of Mandarin characters (#13).

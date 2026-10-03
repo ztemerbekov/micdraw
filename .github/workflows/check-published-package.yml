@@ -33,34 +33,26 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-      # npm takes a minute or so to serve a version it has just accepted.
-      - name: Wait until npm serves the version
-        shell: bash
-        run: |
-          for attempt in $(seq 1 40); do
-            if npm view "micdraw@$VERSION" version --prefer-online >/dev/null 2>&1; then
-              exit 0
-            fi
-            sleep 15
-          done
-          echo "::error::npm does not serve micdraw@$VERSION after 10 minutes."
-          exit 1
       # No checkout: npx must install the package from npm, not use the repo.
-      # npm serves the metadata installs read separately from what `npm view`
-      # reads, and it can lag behind a fresh publish: npx then fails with
-      # ETARGET although the step above saw the version. That case retries.
+      # Installs can see a fresh version minutes after `npm view` does: they
+      # read separate metadata that npm's CDN caches for up to 5 minutes. While
+      # npm reports no such version, the step retries; any other failure fails
+      # it at once.
       - name: Run the CLI from npm
         shell: bash
         run: |
-          for attempt in 1 2 3 4 5; do
+          for attempt in $(seq 1 40); do
             if output=$(npx --yes "micdraw@$VERSION" --help 2>&1); then
               echo "$output"
               grep -q "Usage:" <<< "$output"
-              exit 0
+              exit
             fi
-            echo "$output"
-            grep -q "ETARGET" <<< "$output" || exit 1
-            sleep 30
+            if ! grep -qF "No matching version found for micdraw@$VERSION" <<< "$output"; then
+              echo "$output"
+              exit 1
+            fi
+            sleep 15
           done
-          echo "::error::npx still cannot find micdraw@$VERSION."
+          echo "$output"
+          echo "::error::npm does not serve micdraw@$VERSION to installs after 10 minutes."
           exit 1

@@ -129,7 +129,7 @@ function decodeJwtPayload(token) {
   }
 }
 
-function cleanEnvValue(value) {
+export function cleanEnvValue(value) {
   const trimmedValue = value?.trim();
   return trimmedValue || undefined;
 }

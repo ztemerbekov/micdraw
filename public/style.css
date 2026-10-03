@@ -225,18 +225,6 @@ body {
   border-color: #1a5fc9;
 }
 
-.back-to-staging {
-  background: transparent;
-  color: #1e1e1e;
-  border: 1px solid #1e1e1e;
-  font-weight: 600;
-  font-size: 14px;
-}
-
-.back-to-staging:hover:not(:disabled) {
-  background: #f3f0e7;
-}
-
 .listen-row {
   display: flex;
   gap: 6px;
@@ -455,23 +443,21 @@ button:disabled {
   padding: 8px 8px;
   border-radius: 10px;
   transition: background 120ms ease;
-}
-
-.status-row.clickable {
   cursor: pointer;
 }
 
-.status-row.clickable:hover {
-  background: #f8f6ef;
-}
-
-.status-row.clickable:focus-visible {
+.status-row:focus-visible {
   outline: 2px solid rgba(30, 30, 30, 0.15);
   outline-offset: -1px;
 }
 
 .status-row.open {
   background: #f3f0e7;
+}
+
+/* After .open, so hovering an open row still shows the hover colour. */
+.status-row:hover {
+  background: #f8f6ef;
 }
 
 .label {

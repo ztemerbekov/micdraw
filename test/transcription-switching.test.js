@@ -1,13 +1,12 @@
 // @ts-nocheck - fake engines stand in for the real transcription providers.
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { WebSocket } from "ws";
 
 import { startServer } from "../src/server.js";
 import { createSettingsStore } from "../src/settings-store.js";
+import { tempDir } from "./helpers/tmp.js";
 
 function deferred() {
   let resolve;
@@ -44,10 +43,10 @@ function fakeEngines() {
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 
-async function startWithEngines() {
+async function startWithEngines(t) {
   const { engines, factory } = fakeEngines();
   const settingsStore = createSettingsStore({
-    filePath: path.join(mkdtempSync(path.join(tmpdir(), "micdraw-switch-")), "settings.json"),
+    filePath: path.join(tempDir(t, "micdraw-switch-"), "settings.json"),
     env: {},
     readCodexAuth: () => null,
   });
@@ -85,8 +84,8 @@ async function waitFor(messages, predicate) {
 
 const isStatus = (state) => (message) => message.type === "transcription:status" && message.state === state;
 
-test("saving settings returns before the new voice model is ready, and its progress reaches the page", async () => {
-  const server = await startWithEngines();
+test("saving settings returns before the new voice model is ready, and its progress reaches the page", async (t) => {
+  const server = await startWithEngines(t);
   try {
     const res = await saveTranscription(server.url, { provider: "local", language: "ru" });
     assert.equal(res.status, 200);
@@ -114,8 +113,8 @@ test("saving settings returns before the new voice model is ready, and its progr
   }
 });
 
-test("a voice model that fails to load leaves the previous one running", async () => {
-  const server = await startWithEngines();
+test("a voice model that fails to load leaves the previous one running", async (t) => {
+  const server = await startWithEngines(t);
   try {
     await saveTranscription(server.url, { provider: "local", language: "ru" });
     server.engines[1].failLoading(new Error("network down"));
@@ -136,8 +135,8 @@ test("a voice model that fails to load leaves the previous one running", async (
   }
 });
 
-test("the most recent voice choice wins over one still loading", async () => {
-  const server = await startWithEngines();
+test("the most recent voice choice wins over one still loading", async (t) => {
+  const server = await startWithEngines(t);
   try {
     await saveTranscription(server.url, { provider: "local", language: "ru" });
     await saveTranscription(server.url, { provider: "local", language: "en" });
@@ -154,8 +153,8 @@ test("the most recent voice choice wins over one still loading", async () => {
   }
 });
 
-test("changing only the language of a cloud provider restarts it with that language", async () => {
-  const server = await startWithEngines();
+test("changing only the language of a cloud provider restarts it with that language", async (t) => {
+  const server = await startWithEngines(t);
   try {
     await saveTranscription(server.url, { provider: "deepgram", language: "ru" });
     assert.equal(server.engines.length, 2);

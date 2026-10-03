@@ -11,7 +11,6 @@ on:
       - moonshine-sidecar.config.json
       - scripts/moonshine-sidecar.py
       - scripts/build-moonshine-sidecars.js
-      - packages/moonshine-darwin-*/**
   workflow_dispatch:
 
 permissions:
@@ -19,6 +18,9 @@ permissions:
 
 jobs:
   build:
+    strategy:
+      matrix:
+        target: [darwin-arm64, darwin-x64]
     # Apple Silicon. The x64 binary is built and smoke-tested under Rosetta.
     runs-on: macos-15
     steps:
@@ -26,11 +28,10 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-      # The same version as pythonVersion in moonshine-sidecar.config.json.
       - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
-      - run: npm run build:moonshine-sidecars
+      - run: npm run build:moonshine-sidecars -- --target=${{ matrix.target }}
       - name: Show what was built
         run: |
           for binary in packages/moonshine-darwin-*/bin/micdraw-moonshine; do
@@ -39,6 +40,6 @@ jobs:
           done
       - uses: actions/upload-artifact@v7
         with:
-          name: moonshine-sidecars
+          name: moonshine-sidecar-${{ matrix.target }}
           path: packages/moonshine-darwin-*/bin/micdraw-moonshine
           retention-days: 7

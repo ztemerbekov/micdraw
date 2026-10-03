@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { chmodSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.join(__dirname, "..");
 const config = readJson("moonshine-sidecar.config.json");
+// The universal static library inside Moonshine's macOS release archive.
+const UNIVERSAL_STATIC_LIB = "BasicTranscription/.build/index-build/artifacts/moonshine-swift/Moonshine/Moonshine.xcframework/macos-arm64_x86_64/libmoonshine.a";
 const requestedTarget = readTargetArg();
 const targets = requestedTarget === "all" ? config.targets : config.targets.filter((target) => target.name === requestedTarget);
 
@@ -47,7 +49,8 @@ function buildTarget(target) {
   const sitePackages = pythonSitePackages(archPrefix, venvPython);
   const moonshinePackage = path.join(sitePackages, "moonshine_voice");
   const moonshineDylib = path.join(moonshinePackage, "libmoonshine.dylib");
-  const onnxDylib = path.join(moonshinePackage, "libonnxruntime.1.23.2.dylib");
+  // The file name carries the ONNX Runtime version, which moonshine-voice upgrades change.
+  const onnxDylibName = readdirSync(moonshinePackage).find((name) => /^libonnxruntime\..*dylib$/.test(name));
 
   if (target.arch === "x64") {
     ensureX64MoonshineDylib(moonshineDylib, buildRoot);
@@ -67,8 +70,8 @@ function buildTarget(target) {
     `${moonshineDylib}:moonshine_voice`,
   ];
 
-  if (existsSync(onnxDylib) && target.arch === "arm64") {
-    pyinstallerArgs.push("--add-binary", `${onnxDylib}:moonshine_voice`);
+  if (onnxDylibName && target.arch === "arm64") {
+    pyinstallerArgs.push("--add-binary", `${path.join(moonshinePackage, onnxDylibName)}:moonshine_voice`);
   }
   if (target.arch === "x64") {
     pyinstallerArgs.splice(2, 0, "--target-arch", "x86_64");
@@ -100,10 +103,7 @@ function ensureX64MoonshineDylib(outputPath, buildRoot) {
 
   const archivePath = path.join(buildRoot, "macos-BasicTranscription.tar.gz");
   const extractDir = path.join(buildRoot, "moonshine-release");
-  const staticLib = path.join(
-    extractDir,
-    "BasicTranscription/.build/index-build/artifacts/moonshine-swift/Moonshine/Moonshine.xcframework/macos-arm64_x86_64/libmoonshine.a",
-  );
+  const staticLib = path.join(extractDir, UNIVERSAL_STATIC_LIB);
 
   run(
     ["curl"],
@@ -113,13 +113,7 @@ function ensureX64MoonshineDylib(outputPath, buildRoot) {
   mkdirSync(extractDir, { recursive: true });
   run(
     ["tar"],
-    [
-      "-xzf",
-      archivePath,
-      "-C",
-      extractDir,
-      "BasicTranscription/.build/index-build/artifacts/moonshine-swift/Moonshine/Moonshine.xcframework/macos-arm64_x86_64/libmoonshine.a",
-    ],
+    ["-xzf", archivePath, "-C", extractDir, UNIVERSAL_STATIC_LIB],
     "extracting universal Moonshine static library",
   );
   run(

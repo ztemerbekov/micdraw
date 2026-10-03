@@ -1,14 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { test } from "node:test";
 
-import { resolveSimulatorAgentProvider } from "../src/simulator-agent-provider.js";
+import { resolveSimulatorAgentProvider } from "../scripts/lib/simulator-agent-provider.js";
+import { codexHomeWith } from "./helpers/tmp.js";
 
-test("resolveSimulatorAgentProvider always uses Codex CLI auth", () => {
-  const codexHome = mkdtempSync(join(tmpdir(), "micdraw-sim-codex-"));
-  writeFileSync(join(codexHome, "auth.json"), JSON.stringify({ tokens: { access_token: "codex-token", refresh_token: "refresh" } }));
+test("resolveSimulatorAgentProvider always uses Codex CLI auth", (t) => {
+  const codexHome = codexHomeWith(t);
 
   assert.deepEqual(
     resolveSimulatorAgentProvider({
@@ -26,9 +23,8 @@ test("resolveSimulatorAgentProvider always uses Codex CLI auth", () => {
   );
 });
 
-test("resolveSimulatorAgentProvider disables Codex fast mode", () => {
-  const codexHome = mkdtempSync(join(tmpdir(), "micdraw-sim-codex-"));
-  writeFileSync(join(codexHome, "auth.json"), JSON.stringify({ tokens: { access_token: "codex-token", refresh_token: "refresh" } }));
+test("resolveSimulatorAgentProvider disables Codex fast mode", (t) => {
+  const codexHome = codexHomeWith(t);
 
   assert.deepEqual(
     resolveSimulatorAgentProvider({

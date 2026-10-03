@@ -12,7 +12,7 @@ const PCM16_BYTES_PER_SAMPLE = 2;
 // Reasoning tokens are billed at the output rate; the SDK already counts them
 // inside the output tokens, so they are not added again. GPT-6 bills prompt-cache
 // writes at 1.25x input; they are counted here as plain uncached input.
-export const AGENT_PRICING = {
+const AGENT_PRICING = {
   openai: {
     "gpt-6-luna":   { input: 0.10, cachedInput: 0.01,  output:  0.50 },
     "gpt-6-sol":    { input: 2.00, cachedInput: 0.20,  output: 10.00 },
@@ -34,7 +34,7 @@ export const AGENT_PRICING = {
 };
 
 // Per minute of audio sent, USD.
-export const TRANSCRIPTION_PRICING = {
+const TRANSCRIPTION_PRICING = {
   openai: {
     "gpt-live-transcribe":    0.017,
     "gpt-realtime-whisper":   0.017,
@@ -113,13 +113,11 @@ export function createSessionCostTracker() {
       agent.tokens.output += Number(usage?.output) || 0;
       agent.tokens.reasoning += Number(usage?.reasoning) || 0;
     },
-    recordTranscriptionAudio(args = {}) {
-      const { provider, model = null, base64Audio = null, seconds = null } = args;
+    recordTranscriptionAudio({ provider, model = null, seconds = 0 }) {
       if (!provider) return;
       transcription.provider = provider;
       transcription.model = model ?? transcription.model;
-      const delta = typeof seconds === "number" ? seconds : audioSecondsFromBase64Pcm16(base64Audio);
-      transcription.seconds += delta;
+      transcription.seconds += seconds;
     },
     reset() {
       agent.tokens = { input: 0, cached: 0, output: 0, reasoning: 0 };

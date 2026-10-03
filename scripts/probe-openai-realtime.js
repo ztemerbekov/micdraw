@@ -12,9 +12,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 import { createOpenAITranscription } from "../src/openai-transcription.js";
 
-const settingsPath = path.join(os.homedir(), ".config", "micdraw", "settings.json");
-const settings = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
-const env = { OPENAI_API_KEY: settings.apiKeys.openai };
+const env = { OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? readSavedOpenAIKey() };
 const PCM_PATH = process.argv[2] ?? "/tmp/probe.pcm";
 
 async function probe(model) {
@@ -47,7 +45,7 @@ async function probe(model) {
   const audioEndedAt = Date.now();
   console.log(`[stream] audio sent (${audioEndedAt - start}ms total)`);
 
-  // Wait long enough for delta-quiet (1500ms default) plus some slack.
+  // Wait long enough for delta-quiet (1000ms default) plus some slack.
   await sleep(2500);
 
   const turnLatency = queued.length > 0 ? queued[0].at - audioEndedAt : null;
@@ -55,6 +53,11 @@ async function probe(model) {
   transcription.close();
   await sleep(300);
   return { queued, turnLatency };
+}
+
+function readSavedOpenAIKey() {
+  const settingsPath = path.join(os.homedir(), ".config", "micdraw", "settings.json");
+  return JSON.parse(fs.readFileSync(settingsPath, "utf8")).apiKeys.openai;
 }
 
 await probe("gpt-live-transcribe");

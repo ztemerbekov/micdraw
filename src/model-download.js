@@ -5,7 +5,7 @@ import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
-import { modelFileUrl } from "./local-models.js";
+import { modelDownloadBytes, modelFileUrl } from "./local-models.js";
 
 const COMPLETE_MARKER = ".complete";
 
@@ -19,7 +19,7 @@ export async function ensureModelFiles(model, { modelsDir, fetchFn = fetch, onPr
   if (await isComplete(dir, model)) return paths;
 
   await mkdir(dir, { recursive: true });
-  const totalBytes = Object.values(model.files).reduce((sum, file) => sum + file.size, 0);
+  const totalBytes = modelDownloadBytes(model);
   let receivedBytes = 0;
   for (const [role, file] of Object.entries(model.files)) {
     await downloadVerified(modelFileUrl(model, file), paths[role], file, fetchFn, (bytes) => {

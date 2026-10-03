@@ -123,6 +123,11 @@ export function resolveLocalModel({ language, platform, preferredId = undefined 
   return candidates.find((model) => model.id === preferredId) ?? candidates[0];
 }
 
+/** The total size of a model's files, in bytes. */
+export function modelDownloadBytes(model) {
+  return Object.values(model.files).reduce((sum, file) => sum + file.size, 0);
+}
+
 export function modelFileUrl(model, file) {
   return `${model.source}/resolve/${model.revision}/${file.name}`;
 }
@@ -133,6 +138,6 @@ export function localModelSummaries(platform) {
     label: model.label,
     language: model.language,
     engine: model.engine,
-    downloadBytes: model.files ? Object.values(model.files).reduce((sum, file) => sum + file.size, 0) : null,
+    downloadBytes: model.files ? modelDownloadBytes(model) : null,
   }));
 }

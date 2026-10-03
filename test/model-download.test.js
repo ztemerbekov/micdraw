@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 
 import { ensureModelFiles } from "../src/model-download.js";
+import { tempDir } from "./helpers/tmp.js";
 
 const sha256 = (text) => createHash("sha256").update(text).digest("hex");
 
@@ -30,8 +30,8 @@ function fakeFetch(bodies) {
   return { fetchFn, calls };
 }
 
-test("downloads every file, verifies it and returns the paths", async () => {
-  const modelsDir = mkdtempSync(path.join(tmpdir(), "micdraw-models-"));
+test("downloads every file, verifies it and returns the paths", async (t) => {
+  const modelsDir = tempDir(t, "micdraw-models-");
   const model = fakeModel({ encoder: "enc", tokens: "tok" });
   const { fetchFn, calls } = fakeFetch({ "encoder.bin": "enc", "tokens.bin": "tok" });
   const progress = [];
@@ -44,8 +44,8 @@ test("downloads every file, verifies it and returns the paths", async () => {
   assert.deepEqual(progress.at(-1), { receivedBytes: 6, totalBytes: 6 });
 });
 
-test("a completed model is not downloaded again", async () => {
-  const modelsDir = mkdtempSync(path.join(tmpdir(), "micdraw-models-"));
+test("a completed model is not downloaded again", async (t) => {
+  const modelsDir = tempDir(t, "micdraw-models-");
   const model = fakeModel({ encoder: "enc" });
   await ensureModelFiles(model, { modelsDir, fetchFn: fakeFetch({ "encoder.bin": "enc" }).fetchFn });
 
@@ -54,8 +54,8 @@ test("a completed model is not downloaded again", async () => {
   assert.deepEqual(second.calls, []);
 });
 
-test("a file with the wrong checksum is rejected and not kept", async () => {
-  const modelsDir = mkdtempSync(path.join(tmpdir(), "micdraw-models-"));
+test("a file with the wrong checksum is rejected and not kept", async (t) => {
+  const modelsDir = tempDir(t, "micdraw-models-");
   const model = fakeModel({ encoder: "enc" });
 
   await assert.rejects(
@@ -68,8 +68,8 @@ test("a file with the wrong checksum is rejected and not kept", async () => {
   assert.equal(existsSync(path.join(dir, ".complete")), false);
 });
 
-test("an HTTP error names the file", async () => {
-  const modelsDir = mkdtempSync(path.join(tmpdir(), "micdraw-models-"));
+test("an HTTP error names the file", async (t) => {
+  const modelsDir = tempDir(t, "micdraw-models-");
   await assert.rejects(
     ensureModelFiles(fakeModel({ encoder: "enc" }), { modelsDir, fetchFn: fakeFetch({}).fetchFn }),
     /Download failed \(404\) for encoder\.bin/,

@@ -64,7 +64,8 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
   };
 
   let warmupCancelled = false;
-  let warmupRunning = false;
+  // Ends the warmup loop's wait between attempts early when it is cancelled.
+  let wakeWarmup = () => {};
 
   function publishAgentStatus() {
     const status = (state.agentBusy || state.warmupBusy) ? "thinking" : "idle";
@@ -74,11 +75,10 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
   }
 
   const queue = createTranscriptTurnQueue({
-    // No queue-level debounce: turn boundaries are decided upstream by the
-    // transcription provider (delta-quiet for OpenAI; per-chunk commits for
-    // Moonshine), so by the time queueTranscript fires, the chunk represents
-    // a complete utterance and should run immediately.
-    debounceMs: 0,
+    // The queue does not debounce: turn boundaries are decided upstream by
+    // the transcription provider (delta-quiet for OpenAI; per-chunk commits
+    // for Moonshine), so by the time queueTranscript fires, the chunk
+    // represents a complete utterance and should run immediately.
     // A turn is "ready" only when the accumulated buffer has at least one
     // substantive (non-filler) word. Pure fillers ("uh", "uh um") keep
     // accumulating until the speaker says something real, then fire as one
@@ -103,7 +103,7 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
         options.onAgentEvent?.({ type: "turn:end", transcript, timestamp: new Date().toISOString() });
       } catch (error) {
         console.error("Whiteboard agent failed:", error);
-        broadcast(wss, { type: "error", message: `Whiteboard agent failed: ${error.message}` });
+        broadcast(wss, { type: "error", source: "agent", message: `Whiteboard agent failed: ${error.message}` });
         options.onAgentEvent?.({ type: "turn:error", transcript, error: error.message, timestamp: new Date().toISOString() });
       } finally {
         state.agentBusy = false;
@@ -160,9 +160,8 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
     // Ignore overlapping calls. The previous loop must finish (or be cancelled)
     // before a new one starts, otherwise multiple loops would race for cache
     // confirmation on the same session.
-    if (warmupRunning) return state.warmupPromise;
+    if (state.warmupBusy) return state.warmupPromise;
 
-    warmupRunning = true;
     warmupCancelled = false;
     state.warmupBusy = true;
     publishAgentStatus();
@@ -181,11 +180,9 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
             const result = await runOnce({ attempt, maxAttempts });
             cached = Number(result?.usage?.cached) || 0;
             input = Number(result?.usage?.input) || 0;
-          } catch (error) {
+          } catch {
             // Swallow per-attempt errors; loop should still progress to the
             // next attempt. The actual error is logged by the caller.
-            cached = 0;
-            input = 0;
           }
           if (warmupCancelled) {
             publishWarmupState({ state: "cancelled", attempt, maxAttempts });
@@ -204,7 +201,15 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
           }
           // Wait before the next attempt, but bail early if cancelled mid-sleep.
           const delay = delays[attempt - 1] ?? delays.at(-1) ?? 0;
-          await sleepCancellable(delay, () => warmupCancelled);
+          if (delay > 0) {
+            await new Promise((resolve) => {
+              const timer = setTimeout(resolve, delay);
+              wakeWarmup = () => {
+                clearTimeout(timer);
+                resolve();
+              };
+            });
+          }
         }
       } finally {
         // Append the priming pair AFTER all warmup attempts finish (regardless
@@ -217,7 +222,7 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
         if (Array.isArray(primingMessages) && primingMessages.length > 0) {
           state.agentHistory = [...state.agentHistory, ...primingMessages];
         }
-        warmupRunning = false;
+        wakeWarmup = () => {};
         state.warmupBusy = false;
         publishAgentStatus();
       }
@@ -228,8 +233,9 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
   };
 
   state.cancelWarmup = () => {
-    if (!warmupRunning) return;
+    if (!state.warmupBusy) return;
     warmupCancelled = true;
+    wakeWarmup();
   };
 
   state.backToStaging = () => {
@@ -238,18 +244,6 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
     state.cancelWarmup();
   };
   return state;
-}
-
-function sleepCancellable(ms, isCancelled) {
-  if (ms <= 0) return Promise.resolve();
-  return new Promise((resolve) => {
-    const start = Date.now();
-    const tick = () => {
-      if (isCancelled() || Date.now() - start >= ms) return resolve();
-      setTimeout(tick, Math.min(50, ms));
-    };
-    tick();
-  });
 }
 
 export function broadcast(wss, message) {

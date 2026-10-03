@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { chunkTranscriptAtPunctuation } from "../src/transcript-chunker.js";
+import { chunkTranscriptAtPunctuation } from "../scripts/lib/transcript-chunker.js";
 
 test("chunks transcript at punctuation boundaries", () => {
   const chunks = chunkTranscriptAtPunctuation("First idea, then the second. Is this useful? Yes!");

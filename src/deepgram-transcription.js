@@ -54,7 +54,6 @@ const DEFAULT_CLOSE_GRACE_MS = 1500;
  */
 export function buildDeepgramUrl({
   model = DEFAULT_DEEPGRAM_MODEL,
-  sampleRate = AUDIO_SAMPLE_RATE,
   endpointingMs = DEFAULT_ENDPOINTING_MS,
   utteranceEndMs = DEFAULT_UTTERANCE_END_MS,
   keyterms = [],
@@ -63,7 +62,7 @@ export function buildDeepgramUrl({
   const params = new URLSearchParams([
     ["model", model || DEFAULT_DEEPGRAM_MODEL],
     ["encoding", AUDIO_ENCODING],
-    ["sample_rate", String(sampleRate)],
+    ["sample_rate", String(AUDIO_SAMPLE_RATE)],
     ["channels", String(AUDIO_CHANNELS)],
     // Without interim_results the socket only speaks at the end of a segment,
     // which leaves the live caption blank while someone is talking.
@@ -162,16 +161,9 @@ export function createDeepgramTranscription({
   let settled = [];
   let interim = "";
 
-  let configuredKeyterms = normaliseKeyterms(options.deepgramKeyterms);
-  let contextKeywords = [];
-  let activeKeyterms = mergeKeyterms(configuredKeyterms, contextKeywords);
+  let activeKeyterms = mergeKeyterms(options.deepgramKeyterms, []);
 
   const model = options.deepgramModel || DEFAULT_DEEPGRAM_MODEL;
-  const endpointingMs = numberOr(options.deepgramEndpointingMs, DEFAULT_ENDPOINTING_MS);
-  const utteranceEndMs = numberOr(options.deepgramUtteranceEndMs, DEFAULT_UTTERANCE_END_MS);
-  const keepaliveMs = numberOr(options.deepgramKeepaliveMs, KEEPALIVE_MS);
-  const finalizeGraceMs = numberOr(options.deepgramFinalizeGraceMs, DEFAULT_FINALIZE_GRACE_MS);
-  const closeGraceMs = numberOr(options.deepgramCloseGraceMs, DEFAULT_CLOSE_GRACE_MS);
 
   function currentText() {
     const parts = [...settled];
@@ -217,8 +209,7 @@ export function createDeepgramTranscription({
 
   function startKeepalive() {
     stopKeepalive();
-    if (keepaliveMs <= 0) return;
-    keepaliveTimer = setIntervalFn(() => sendControl("KeepAlive"), keepaliveMs);
+    keepaliveTimer = setIntervalFn(() => sendControl("KeepAlive"), KEEPALIVE_MS);
     // Node keeps the process alive for a pending interval; this one should not.
     keepaliveTimer?.unref?.();
   }
@@ -238,6 +229,14 @@ export function createDeepgramTranscription({
     return key;
   }
 
+  function forgetSocket() {
+    socket = null;
+    open = false;
+    readyPromise = null;
+    resolveReady = null;
+    rejectReady = null;
+  }
+
   function ensureSocket() {
     if (socket) return socket;
 
@@ -251,13 +250,7 @@ export function createDeepgramTranscription({
     // by then, and an unhandled rejection would take the server down.
     readyPromise.catch(() => {});
 
-    const url = buildDeepgramUrl({
-      model,
-      language: options.transcriptionLanguage,
-      endpointingMs,
-      utteranceEndMs,
-      keyterms: activeKeyterms,
-    });
+    const url = buildDeepgramUrl({ model, language: options.transcriptionLanguage, keyterms: activeKeyterms });
 
     const created = createWebSocket(url, undefined, {
       // Deepgram's own scheme. Never log this header, and never let the key
@@ -299,11 +292,7 @@ export function createDeepgramTranscription({
       stopKeepalive();
       cancelFinalizeTimer();
       rejectReady?.(new Error("Deepgram socket closed before it was ready."));
-      socket = null;
-      open = false;
-      readyPromise = null;
-      resolveReady = null;
-      rejectReady = null;
+      forgetSocket();
       pendingAudio = [];
     });
 
@@ -363,11 +352,7 @@ export function createDeepgramTranscription({
     // reset), when no audio is in flight, so a reconnect costs nothing.
     if (!socket) return;
     const previous = socket;
-    socket = null;
-    open = false;
-    readyPromise = null;
-    resolveReady = null;
-    rejectReady = null;
+    forgetSocket();
     stopKeepalive();
     try {
       previous.close();
@@ -406,8 +391,7 @@ export function createDeepgramTranscription({
     },
     /** @param {{ keywords?: string[] | null }} [ctx] */
     setSessionContext: (ctx) => {
-      contextKeywords = normaliseKeyterms(ctx?.keywords);
-      applyKeyterms(mergeKeyterms(configuredKeyterms, contextKeywords));
+      applyKeyterms(mergeKeyterms(options.deepgramKeyterms, ctx?.keywords));
     },
     stop: () => {
       // Stop means "queue what I just said, now". `Finalize` asks Deepgram to
@@ -421,14 +405,10 @@ export function createDeepgramTranscription({
       }
       sendControl("Finalize");
       cancelFinalizeTimer();
-      if (finalizeGraceMs <= 0) {
-        commitTurn();
-        return;
-      }
       finalizeTimer = setTimeoutFn(() => {
         finalizeTimer = null;
         commitTurn();
-      }, finalizeGraceMs);
+      }, DEFAULT_FINALIZE_GRACE_MS);
       finalizeTimer?.unref?.();
     },
     close: () => {
@@ -448,32 +428,20 @@ export function createDeepgramTranscription({
       // CloseStream FIRST, then wait, then close. Reversed, the words still
       // inside Deepgram when the socket dropped never come back.
       sendControl("CloseStream");
-      socket = null;
-      open = false;
-      readyPromise = null;
-      resolveReady = null;
-      rejectReady = null;
+      forgetSocket();
       closeTimer = setTimeoutFn(() => {
         closeTimer = null;
         try {
           target.close();
         } catch {}
-      }, closeGraceMs);
+      }, DEFAULT_CLOSE_GRACE_MS);
       closeTimer?.unref?.();
     },
   };
 }
 
-function normaliseKeyterms(value) {
-  if (!Array.isArray(value)) return [];
-  return value.filter((term) => typeof term === "string" && term.trim()).map((term) => term.trim());
-}
-
-function sameTerms(a, b) {
+/** Whether two keyterm lists hold the same terms in the same order. */
+export function sameTerms(a, b) {
   if (a.length !== b.length) return false;
   return a.every((term, index) => term === b[index]);
-}
-
-function numberOr(value, fallback) {
-  return Number.isFinite(value) ? Number(value) : fallback;
 }

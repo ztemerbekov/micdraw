@@ -9,7 +9,7 @@ export const CLOUD_LANGUAGES = Object.freeze(["en", "ru", "de", "fr", "es", "zh"
 // Deepgram nova-3 can also transcribe a mix of English, Spanish, French,
 // German, Hindi, Russian, Portuguese, Japanese, Italian and Dutch in one
 // stream, for example Russian speech with English terms.
-export const MIXED_LANGUAGES = "multi";
+const MIXED_LANGUAGES = "multi";
 
 const DEEPGRAM_LANGUAGES = Object.freeze([...CLOUD_LANGUAGES, MIXED_LANGUAGES]);
 
