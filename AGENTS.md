@@ -22,6 +22,7 @@ Guidance for coding agents in this repo. The README owns user-facing behavior, C
 - The agent edits a line-numbered text view of the scene, not Excalidraw JSON. When changing the edit contract, update the tool schema in `src/server.js`, the applier in `src/whiteboard-tools.js`, and add a test in `test/whiteboard-tools.test.js`.
 - The system prompt is P1-P10 cross-cutting principles plus short per-genre stubs. Do not append verbose "When the talk is X..." paragraphs. Prompt experiments use `scripts/simulate-whiteboard-agent.md`.
 - Every HTTP request and WebSocket handshake passes `isAllowedRequest` in `src/request-guard.js`: a loopback Host, and an Origin, when present, equal to the app's own. Keep new routes and WebSocket paths behind it.
+- Transcription engines share one contract (`ready`, `sendAudio`, `stop`, `close`). `resolveTranscriptionEngine` in `src/server.js` maps settings to an engine; the `local` provider picks a model from `src/local-models.js` by language and platform, and sherpa-onnx decodes in a worker thread (`src/sherpa-worker.js`). A catalog change updates the model's revision, sizes and SHA-256 together.
 - Settings (`src/settings-store.js`): always use `getSanitized()` for outbound payloads so API keys never reach the frontend. Env vars only seed `~/.config/micdraw/settings.json` on first run.
 
 ## Testing

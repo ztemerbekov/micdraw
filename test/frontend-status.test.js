@@ -74,3 +74,12 @@ test("frontend exposes OpenAI agent base URL and labels the key as API key", () 
   assert.match(appSource, /field\([\s\S]*"API key"[\s\S]*placeholder: "configured \(enter to replace\)"/);
   assert.doesNotMatch(appSource, /"OpenAI key"/);
 });
+
+test("frontend lets the speaker pick a local language and model", () => {
+  const appSource = readFileSync(path.join(rootDir, "public", "app.js"), "utf8");
+  assert.match(appSource, /setLocalModels\(config\.localModels \?\? \[\]\)/);
+  assert.match(appSource, /\{ value: "local" \}/);
+  assert.match(appSource, /const LANGUAGE_LABELS = \{ en: "English", ru: "Русский" \}/);
+  assert.match(appSource, /local: \{ models: \{ \[language\]: localModelId \} \}/);
+  assert.doesNotMatch(appSource, /MOONSHINE_MODELS/);
+});

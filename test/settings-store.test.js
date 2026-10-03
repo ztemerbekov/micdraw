@@ -84,10 +84,10 @@ test("createSettingsStore tolerates Codex auth read errors and falls back to oth
   assert.equal(settings.agent.provider, "openai");
 });
 
-test("createSettingsStore falls back to moonshine transcription without OPENAI_API_KEY", async () => {
+test("createSettingsStore falls back to local transcription without OPENAI_API_KEY", async () => {
   const store = createSettingsStore({ filePath: await tempPath(), env: {}, readCodexAuth: noCodexAuth });
   const settings = await store.load();
-  assert.equal(settings.transcription.provider, "moonshine");
+  assert.equal(settings.transcription.provider, "local");
 });
 
 test("createSettingsStore.save deep-merges and persists to disk", async () => {
@@ -306,4 +306,28 @@ test("saving keyterms replaces the array rather than merging it", async () => {
   await store.save({ transcription: { deepgram: { keyterms: ["Kubernetes"] } } });
   const afterSecond = await store.load();
   assert.deepEqual(afterSecond.transcription.deepgram.keyterms, ["Kubernetes"]);
+});
+
+test("createSettingsStore defaults to local transcription in English", async () => {
+  const store = createSettingsStore({ filePath: await tempPath(), env: {}, readCodexAuth: noCodexAuth });
+  const settings = await store.load();
+  assert.equal(settings.transcription.provider, "local");
+  assert.equal(settings.transcription.language, "en");
+  assert.deepEqual(settings.transcription.local, { models: {} });
+});
+
+test("createSettingsStore.save accepts a language and a local model for it", async () => {
+  const store = createSettingsStore({ filePath: await tempPath(), env: {}, readCodexAuth: noCodexAuth });
+  await store.save({ transcription: { provider: "local", language: "ru", local: { models: { ru: "vosk-small-ru-2025-08-16" } } } });
+  const settings = await store.load();
+  assert.equal(settings.transcription.language, "ru");
+  assert.equal(settings.transcription.local.models.ru, "vosk-small-ru-2025-08-16");
+});
+
+test("createSettingsStore.save rejects unknown transcription choices", async () => {
+  const store = createSettingsStore({ filePath: await tempPath(), env: {}, readCodexAuth: noCodexAuth });
+  await assert.rejects(store.save({ transcription: { provider: "whisper.cpp" } }), /transcription provider/);
+  await assert.rejects(store.save({ transcription: { language: "xx" } }), /language/);
+  await assert.rejects(store.save({ transcription: { local: { models: { en: "vosk-small-ru-2025-08-16" } } } }), /local model/);
+  await assert.rejects(store.save({ transcription: { local: { models: { xx: "kroko-en-2025-08-06" } } } }), /language/);
 });

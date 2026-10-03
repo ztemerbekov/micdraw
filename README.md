@@ -42,8 +42,8 @@ Then, in the browser:
 ```
   ┌──────────┐   audio    ┌──────────────┐   text   ┌──────────────┐
   │   mic    │──────────► │     STT      │────────► │  whiteboard  │
-  │ (browser)│   24kHz    │ Moonshine /  │ chunks   │    agent     │
-  └──────────┘            │ OpenAI WS    │          │ (OpenAI /    │
+  │ (browser)│   24kHz    │ local or     │ chunks   │    agent     │
+  └──────────┘            │ cloud        │          │ (OpenAI /    │
                           └──────────────┘          │  Codex /     │
                                                     │  Ollama)     │
                                                     └──────┬───────┘
@@ -87,17 +87,17 @@ OpenAI prices use the built-in May 2026 rate table; local providers show `$0.000
 
 When no settings file exists, Mic Draw picks providers based on what it finds in your environment:
 
-| You have...                                | Agent provider                 | Transcription              |
-| ------------------------------------------ | ------------------------------ | -------------------------- |
-| Nothing                                    | OpenAI `gpt-5.5` (needs a key) | Moonshine `medium` (macOS) |
-| `OPENAI_API_KEY` in env                    | OpenAI `gpt-5.5`               | OpenAI Realtime            |
-| Codex CLI signed in (`~/.codex/auth.json`) | Codex `gpt-5.5-fast`           | Moonshine `medium`         |
-| Codex CLI signed in + `OPENAI_API_KEY`     | Codex `gpt-5.5-fast`           | OpenAI Realtime            |
-| `OLLAMA_MODEL` set                         | Ollama (your model)            | Moonshine `medium`         |
-| `OPENROUTER_API_KEY` in env                | OpenRouter `x-ai/grok-4.20`    | (unchanged by this key)    |
-| `DEEPGRAM_API_KEY` in env                  | (unchanged by this key)        | Deepgram `nova-3`          |
+| You have...                                | Agent provider                 | Transcription           |
+| ------------------------------------------ | ------------------------------ | ----------------------- |
+| Nothing                                    | OpenAI `gpt-5.5` (needs a key) | Local, English          |
+| `OPENAI_API_KEY` in env                    | OpenAI `gpt-5.5`               | OpenAI Realtime         |
+| Codex CLI signed in (`~/.codex/auth.json`) | Codex `gpt-5.5-fast`           | Local, English          |
+| Codex CLI signed in + `OPENAI_API_KEY`     | Codex `gpt-5.5-fast`           | OpenAI Realtime         |
+| `OLLAMA_MODEL` set                         | Ollama (your model)            | Local, English          |
+| `OPENROUTER_API_KEY` in env                | OpenRouter `x-ai/grok-4.20`    | (unchanged by this key) |
+| `DEEPGRAM_API_KEY` in env                  | (unchanged by this key)        | Deepgram `nova-3`       |
 
-Auto-detection precedence: **`OPENROUTER_API_KEY` wins over Codex CLI auth wins over `OLLAMA_MODEL` wins over `OPENAI_API_KEY`** for the agent. For transcription, **`DEEPGRAM_API_KEY` wins over `OPENAI_API_KEY`**, otherwise Moonshine. After first run, this auto-detection no longer applies - change providers from the in-app status panel.
+Auto-detection precedence: **`OPENROUTER_API_KEY` wins over Codex CLI auth wins over `OLLAMA_MODEL` wins over `OPENAI_API_KEY`** for the agent. For transcription, **`DEEPGRAM_API_KEY` wins over `OPENAI_API_KEY`**, otherwise local. After first run, this auto-detection no longer applies - change providers from the in-app status panel.
 
 ### Environment variables
 
@@ -119,7 +119,27 @@ Provider variables only seed `settings.json` on first run. Once the file exists,
 | `MICDRAW_CACHE_LOG`    | Cache usage log path. Default: `~/.config/micdraw/logs/cache.log`. |
 | `MICDRAW_DEBUG_LOG`    | Agent debug log path. Default: `~/.config/micdraw/logs/debug.log`. |
 
-Local Moonshine transcription ships as an optional native sidecar for `darwin-arm64` and `darwin-x64`. For now these are the sidecar builds published by autopreso (`@autopreso/moonshine-darwin-*`). On other platforms, choose OpenAI Realtime or Deepgram in the STT panel.
+Local transcription runs on your machine on macOS, Linux and Windows; see [Local transcription](#local-transcription) for languages, models and where they are stored.
+
+## Local transcription
+
+**Local (this computer)** is the default speech engine. It streams: text appears while you speak, and a phrase goes to the agent when you pause. Local engines process audio on your machine; the only network traffic is a one-time model download. Pick the language and model in the Voice panel. English is the default.
+
+| Language | macOS | Linux, Windows |
+| --- | --- | --- |
+| English | Moonshine medium | Kroko (sherpa-onnx) |
+| Russian | Vosk small (sherpa-onnx) | Vosk small (sherpa-onnx) |
+
+On macOS you can also pick Moonshine small or tiny, or Kroko. Moonshine is the macOS default for English because it finishes a phrase about a second sooner at similar accuracy; the measurements are in [#3](https://github.com/ztemerbekov/micdraw/issues/3).
+
+sherpa-onnx models download once, on first use, from Hugging Face at a pinned commit, and every file is checked against its SHA-256 before it is used. They are stored in `~/.config/micdraw/models/`.
+
+| Model | Size | License | Source |
+| --- | --- | --- | --- |
+| Kroko English streaming zipformer | 71 MB | CC-BY-SA (Kroko community model) | [Banafo/Kroko-ASR](https://huggingface.co/Banafo/Kroko-ASR), packaged for sherpa-onnx as [csukuangfj/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06](https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06) |
+| Vosk small Russian streaming zipformer | 29 MB | Apache-2.0 | [alphacep/vosk-model-small-streaming-ru](https://huggingface.co/alphacep/vosk-model-small-streaming-ru), packaged for sherpa-onnx as [csukuangfj/sherpa-onnx-streaming-zipformer-small-ru-vosk-int8-2025-08-16](https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-small-ru-vosk-int8-2025-08-16) |
+
+Moonshine runs as a native sidecar on `darwin-arm64` and `darwin-x64`. For now these are the sidecar builds published by autopreso (`@autopreso/moonshine-darwin-*`).
 
 ## Deepgram transcription
 
@@ -187,7 +207,9 @@ Two deliberate differences from the OpenAI provider:
 
 - [autopreso](https://github.com/kunchenguid/autopreso) by Kun Chen - the project Mic Draw started from.
 - [Excalidraw](https://github.com/excalidraw/excalidraw) - the whiteboard canvas, scene model, and rendering.
-- [Moonshine](https://github.com/moonshine-ai/moonshine) - the local speech-to-text model that makes the offline path possible.
+- [Moonshine](https://github.com/moonshine-ai/moonshine) - local English speech-to-text on macOS.
+- [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) - the streaming speech-to-text runtime for the other local models.
+- [Kroko](https://huggingface.co/Banafo/Kroko-ASR) and [Vosk](https://alphacephei.com/vosk/) - the English and Russian streaming models.
 - [Vercel AI SDK](https://github.com/vercel/ai) - tool-calling agent loop and provider abstraction.
 
 ## Development

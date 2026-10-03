@@ -16,9 +16,11 @@ import {
   resolveAgentProviderFromSettings,
 } from "./agent-provider.js";
 import { createDeepgramTranscription as createDefaultDeepgramTranscription } from "./deepgram-transcription.js";
+import { localModelSummaries, resolveLocalModel, SUPPORTED_LANGUAGES } from "./local-models.js";
 import { createMoonshineTranscription as createDefaultMoonshineTranscription } from "./moonshine-transcription.js";
 import { createOpenAITranscription as createDefaultOpenAITranscription } from "./openai-transcription.js";
 import { isAllowedRequest } from "./request-guard.js";
+import { createSherpaTranscription as createDefaultSherpaTranscription } from "./sherpa-transcription.js";
 import { audioSecondsFromBase64Pcm16 } from "./session-cost.js";
 import { validateAgentInstructions } from "./settings-store.js";
 import { broadcast, createWhiteboardSession } from "./whiteboard-session.js";
@@ -74,6 +76,8 @@ export async function startServer(options) {
     res.json({
       transcriptionEngine: transcription.getLabel(),
       settings: sanitized,
+      languages: SUPPORTED_LANGUAGES,
+      localModels: localModelSummaries(options.platform ?? process.platform),
     });
   });
 
@@ -256,13 +260,49 @@ export async function startServer(options) {
 }
 
 /**
- * Transcription provider name -> its factory. Moonshine is the fallback for an
- * unset or unrecognised name because it is the one engine that needs no key.
+ * The engine and model the transcription settings select on this platform.
+ * "local" picks from the catalog by language; "moonshine" is the provider name
+ * older settings files use, and still means the Moonshine sidecar.
  */
-export function transcriptionFactoryFor(provider) {
-  if (provider === "openai") return createDefaultOpenAITranscription;
-  if (provider === "deepgram") return createDefaultDeepgramTranscription;
-  return createDefaultMoonshineTranscription;
+export function resolveTranscriptionEngine(transcription, platform = process.platform) {
+  const provider = transcription?.provider ?? "local";
+  if (provider === "openai") {
+    const model = transcription.openai?.model;
+    return { kind: "openai", provider, model, label: `OpenAI ${model}` };
+  }
+  if (provider === "deepgram") {
+    const model = transcription.deepgram?.model ?? "";
+    return { kind: "deepgram", provider, model, label: `Deepgram ${model}`.trim() };
+  }
+  if (provider === "moonshine") {
+    const model = transcription.moonshine?.model ?? "medium";
+    return { kind: "moonshine", provider, model, label: `Moonshine ${model}`, moonshineModel: model };
+  }
+  const language = transcription?.language ?? "en";
+  const localModel = resolveLocalModel({ language, platform, preferredId: transcription?.local?.models?.[language] });
+  return {
+    kind: localModel.engine,
+    provider: "local",
+    model: localModel.id,
+    label: localModel.label,
+    moonshineModel: localModel.moonshineModel,
+    localModel,
+  };
+}
+
+const ENGINE_FACTORIES = {
+  openai: createDefaultOpenAITranscription,
+  deepgram: createDefaultDeepgramTranscription,
+  moonshine: createDefaultMoonshineTranscription,
+  sherpa: createDefaultSherpaTranscription,
+};
+
+/**
+ * Engine kind -> its factory. Moonshine stays the fallback for an unset or
+ * unrecognised name, as it was before the local provider existed.
+ */
+export function transcriptionFactoryFor(kind) {
+  return ENGINE_FACTORIES[kind] ?? createDefaultMoonshineTranscription;
 }
 
 async function createTranscriptionManager({ options, wss, queueTranscript, state }) {
@@ -276,11 +316,27 @@ async function createTranscriptionManager({ options, wss, queueTranscript, state
 
   const sendTranscript = (message) => broadcast(wss, message);
 
-  function buildOptionsForFactory(settings) {
-    if (!settings) return options;
+  // Without a settings store (tests, embedding) the options name the engine directly.
+  function transcriptionFrom(settings) {
+    if (settings) return settings.transcription;
+    return {
+      provider: options.transcriptionProvider ?? "moonshine",
+      moonshine: { model: options.moonshineModel },
+      openai: { model: options.openaiTranscriptionModel },
+      deepgram: { model: options.deepgramModel },
+    };
+  }
+
+  function buildOptionsForFactory(settings, engine) {
+    const engineOptions = {
+      moonshineModel: engine.moonshineModel ?? options.moonshineModel,
+      localModel: engine.localModel,
+      modelsDir: options.modelsDir,
+    };
+    if (!settings) return { ...options, ...engineOptions };
     return {
       ...options,
-      moonshineModel: settings.transcription.moonshine.model,
+      ...engineOptions,
       openaiTranscriptionModel: settings.transcription.openai.model,
       deepgramModel: settings.transcription.deepgram?.model,
       deepgramKeyterms: settings.transcription.deepgram?.keyterms,
@@ -294,40 +350,19 @@ async function createTranscriptionManager({ options, wss, queueTranscript, state
     };
   }
 
-  function pickFactory(settings) {
-    if (options.createTranscription) return options.createTranscription;
-    return transcriptionFactoryFor(
-      settings ? settings.transcription.provider : options.transcriptionProvider,
-    );
-  }
-
-  function describeLabel(settings) {
-    if (settings) {
-      if (settings.transcription.provider === "openai") return `OpenAI ${settings.transcription.openai.model}`;
-      if (settings.transcription.provider === "deepgram") return `Deepgram ${settings.transcription.deepgram?.model ?? ""}`.trim();
-      return `Moonshine ${settings.transcription.moonshine.model}`;
-    }
-    if (options.transcriptionProvider === "openai") return `OpenAI ${options.openaiTranscriptionModel}`;
-    if (options.transcriptionProvider === "deepgram") return `Deepgram ${options.deepgramModel ?? ""}`.trim();
-    return `Moonshine ${options.moonshineModel}`;
-  }
-
   async function applyCurrent() {
     const settings = options.settingsStore ? await options.settingsStore.load() : null;
-    const newLabel = describeLabel(settings);
-    activeProvider = settings ? settings.transcription.provider : (options.transcriptionProvider ?? "moonshine");
-    activeModel = activeProvider === "openai"
-      ? (settings?.transcription.openai.model ?? options.openaiTranscriptionModel ?? null)
-      : activeProvider === "deepgram"
-        ? (settings?.transcription.deepgram?.model ?? options.deepgramModel ?? null)
-        : (settings?.transcription.moonshine.model ?? options.moonshineModel ?? null);
+    const engine = resolveTranscriptionEngine(transcriptionFrom(settings), options.platform ?? process.platform);
+    const newLabel = engine.label;
+    activeProvider = engine.provider;
+    activeModel = engine.model ?? null;
 
     if (current && newLabel === label) return;
 
     if (current) current.close();
 
-    const factoryOptions = buildOptionsForFactory(settings);
-    const factory = pickFactory(settings);
+    const factoryOptions = buildOptionsForFactory(settings, engine);
+    const factory = options.createTranscription ?? transcriptionFactoryFor(engine.kind);
     label = newLabel;
     options.onStatus?.(`Preparing ${label} transcription model...`);
     current = factory({

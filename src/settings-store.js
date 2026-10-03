@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { readCodexCliAuthSync } from "./codex-auth.js";
+import { LOCAL_MODELS, SUPPORTED_LANGUAGES } from "./local-models.js";
 
 export const MAX_AGENT_INSTRUCTIONS_CHARS = 100_000;
 
@@ -14,7 +15,12 @@ export const DEFAULT_SETTINGS = Object.freeze({
     openrouter: { model: "x-ai/grok-4.20", baseURL: "https://openrouter.ai/api/v1" },
   },
   transcription: {
-    provider: "moonshine",
+    // "local" picks a model by language and platform (src/local-models.js);
+    // `local.models` holds a per-language pick. "moonshine" is the provider
+    // older settings files use and still means the Moonshine sidecar.
+    provider: "local",
+    language: "en",
+    local: { models: {} },
     moonshine: { model: "medium" },
     openai: { model: "gpt-realtime-whisper" },
     // `keyterms` biases nova-3 toward words its language model has never seen -
@@ -68,6 +74,7 @@ export function createSettingsStore({ filePath, env = process.env, readCodexAuth
     if (!cached) await load();
     validateAgentInstructions(partial?.agentInstructions);
     validateBaseURLs(partial);
+    validateTranscription(partial?.transcription);
     cached = deepMerge(cached, partial);
     await writeToDisk(cached);
     return cached;
@@ -183,6 +190,25 @@ function trimOrEmpty(value) {
 export function validateAgentInstructions(value) {
   if (typeof value === "string" && value.length > MAX_AGENT_INSTRUCTIONS_CHARS) {
     throw new Error(`Agent instructions must be ${MAX_AGENT_INSTRUCTIONS_CHARS} characters or fewer.`);
+  }
+}
+
+const TRANSCRIPTION_PROVIDERS = ["local", "moonshine", "openai", "deepgram"];
+
+function validateTranscription(transcription) {
+  if (!transcription || typeof transcription !== "object") return;
+  const { provider, language, local } = transcription;
+  if (provider !== undefined && !TRANSCRIPTION_PROVIDERS.includes(provider)) {
+    throw new Error(`Unknown transcription provider "${provider}".`);
+  }
+  if (language !== undefined && !SUPPORTED_LANGUAGES.includes(language)) {
+    throw new Error(`Unsupported transcription language "${language}".`);
+  }
+  for (const [lang, id] of Object.entries(local?.models ?? {})) {
+    if (!SUPPORTED_LANGUAGES.includes(lang)) throw new Error(`Unsupported transcription language "${lang}".`);
+    if (!LOCAL_MODELS.some((model) => model.id === id && model.language === lang)) {
+      throw new Error(`Unknown local model "${id}" for language "${lang}".`);
+    }
   }
 }
 
