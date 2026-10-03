@@ -33,8 +33,8 @@ Guidance for coding agents in this repo. The README owns user-facing behavior, C
 
 ## Releases
 
-- There is no release automation yet: nothing publishes to npm. Do not add a release or publish workflow without discussing it first.
-- Local Moonshine installs the upstream autopreso sidecar builds (`@autopreso/moonshine-darwin-*`, binary `autopreso-moonshine`, see `src/moonshine-transcription.js`). `packages/` holds micdraw's own sidecar packages (`@micdraw/moonshine-darwin-*`), which are not published yet; switch the resolver and `optionalDependencies` to them once they are.
+- `CONTRIBUTING.md` has the release steps. `.github/workflows/release.yml` publishes to npm through trusted publishing, so no npm token lives in the repo. npm trusts that workflow by file name: renaming it breaks publishing until the trust on npm is updated.
+- Local Moonshine installs the upstream autopreso sidecar builds (`@autopreso/moonshine-darwin-*`, binary `autopreso-moonshine`, see `src/moonshine-transcription.js`). `packages/` holds micdraw's own sidecar packages (`@micdraw/moonshine-darwin-*`), which are not published yet (#55); switch the resolver and `optionalDependencies` to them once they are.
 
 ## README
 

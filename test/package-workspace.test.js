@@ -24,6 +24,17 @@ test("root package keeps platform sidecars as optional published packages, not l
   assert.ok(rootPackage.optionalDependencies["@autopreso/moonshine-darwin-x64"]);
 });
 
+test("package.json, package-lock.json and the changelog agree on the version", () => {
+  const { version } = readJson("package.json");
+  const lock = readJson("package-lock.json");
+  const changelog = readFileSync(path.join(rootDir, "CHANGELOG.md"), "utf8");
+
+  assert.equal(lock.version, version);
+  assert.equal(lock.packages[""].version, version);
+  // A release PR turns "## Unreleased" into the section of the version it publishes.
+  assert.match(changelog, new RegExp(`^## ${version.replaceAll(".", "\\.")} \\(\\d{4}-\\d{2}-\\d{2}\\)$`, "m"));
+});
+
 test("Moonshine sidecar packages share one version", () => {
   const armPackage = readJson("packages/moonshine-darwin-arm64/package.json");
   const x64Package = readJson("packages/moonshine-darwin-x64/package.json");
