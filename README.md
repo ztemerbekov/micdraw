@@ -89,15 +89,15 @@ When no settings file exists, Mic Draw picks providers based on what it finds in
 
 | You have...                                | Agent provider                    | Transcription           |
 | ------------------------------------------ | --------------------------------- | ----------------------- |
-| Nothing                                    | OpenAI `gpt-6-luna` (needs a key) | Local, English          |
-| `OPENAI_API_KEY` in env                    | OpenAI `gpt-6-luna`               | OpenAI Realtime         |
-| Codex CLI signed in (`~/.codex/auth.json`) | Codex `gpt-6-luna-fast`           | Local, English          |
-| Codex CLI signed in + `OPENAI_API_KEY`     | Codex `gpt-6-luna-fast`           | OpenAI Realtime         |
+| Nothing                                    | OpenAI `gpt-6-sol` (needs a key)  | Local, English          |
+| `OPENAI_API_KEY` in env                    | OpenAI `gpt-6-sol`                | OpenAI Realtime         |
+| Codex CLI signed in (`~/.codex/auth.json`) | Codex `gpt-6-sol`, Fast mode      | Local, English          |
+| Codex CLI signed in + `OPENAI_API_KEY`     | Codex `gpt-6-sol`, Fast mode      | OpenAI Realtime         |
 | `OLLAMA_MODEL` set                         | Ollama (your model)               | Local, English          |
 | `OPENROUTER_API_KEY` in env                | OpenRouter `x-ai/grok-4.20`       | (unchanged by this key) |
 | `DEEPGRAM_API_KEY` in env                  | (unchanged by this key)           | Deepgram `nova-3`       |
 
-A Codex model name ending in `-fast` runs in Fast mode, which draws sooner but uses more of your ChatGPT plan. If a saved Codex model is one that Codex no longer serves (GPT-5.5 leaves it on 2026-10-14), Mic Draw switches it to GPT-6 Luna on start.
+Codex runs in OpenAI's Fast mode by default (the **Fast mode** switch in the agent settings): replies come sooner, but they use your ChatGPT plan 2.5x faster. If a saved Codex model is one that Codex no longer serves (GPT-5.5 leaves it on 2026-10-14), Mic Draw switches it to GPT-6 Sol on start.
 
 Auto-detection precedence: **`OPENROUTER_API_KEY` wins over Codex CLI auth wins over `OLLAMA_MODEL` wins over `OPENAI_API_KEY`** for the agent. For transcription, **`DEEPGRAM_API_KEY` wins over `OPENAI_API_KEY`**, otherwise local. After first run, this auto-detection no longer applies - change providers from the in-app status panel.
 

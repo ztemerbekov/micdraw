@@ -18,7 +18,7 @@ test("resolveSimulatorAgentProvider always uses Codex CLI auth", () => {
     }),
     {
       provider: "codex",
-      model: "gpt-6-luna",
+      model: "gpt-6-sol",
       baseURL: "https://chatgpt.com/backend-api/codex",
       apiKey: "codex-token",
       reasoningEffort: "low",
@@ -33,11 +33,11 @@ test("resolveSimulatorAgentProvider disables Codex fast mode", () => {
   assert.deepEqual(
     resolveSimulatorAgentProvider({
       CODEX_HOME: codexHome,
-      CODEX_MODEL: "gpt-6-luna-fast",
+      CODEX_MODEL: "gpt-6-sol-fast",
     }),
     {
       provider: "codex",
-      model: "gpt-6-luna",
+      model: "gpt-6-sol",
       baseURL: "https://chatgpt.com/backend-api/codex",
       apiKey: "codex-token",
       reasoningEffort: "low",
