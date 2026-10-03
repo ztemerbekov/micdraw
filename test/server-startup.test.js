@@ -546,3 +546,20 @@ function collectWebSocketMessages(url, count) {
     });
   });
 }
+
+test("config lists the languages and the local models for the platform", async () => {
+  const { httpServer, url } = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    moonshineModel: "medium",
+    platform: "linux",
+    createTranscription: () => ({ ready: async () => {}, sendAudio: () => {}, stop: () => {}, close: () => {} }),
+  });
+  try {
+    const config = await (await fetch(`${url}/api/config`)).json();
+    assert.deepEqual(config.languages, ["en", "ru"]);
+    assert.deepEqual(config.localModels.map((model) => model.id), ["kroko-en-2025-08-06", "vosk-small-ru-2025-08-16"]);
+  } finally {
+    await new Promise((resolve) => httpServer.close(resolve));
+  }
+});

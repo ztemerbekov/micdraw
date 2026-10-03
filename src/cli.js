@@ -9,6 +9,7 @@ import { startServer } from "./server.js";
 import { createSettingsStore } from "./settings-store.js";
 
 const SETTINGS_PATH = path.join(os.homedir(), ".config", "micdraw", "settings.json");
+const MODELS_DIR = path.join(os.homedir(), ".config", "micdraw", "models");
 
 async function main() {
   let options;
@@ -57,6 +58,7 @@ async function main() {
   const { url } = await startServer({
     ...options,
     settingsStore,
+    modelsDir: MODELS_DIR,
     onStatus: (message) => console.log(message),
   });
 

@@ -175,3 +175,11 @@ test("OpenRouter agent usage is reported unpriced rather than at a guessed rate"
   assert.equal(result.reason, "unpriced");
   assert.equal(result.cost, 0);
 });
+
+test("computeTranscriptionCost returns priced=false for local models", () => {
+  assert.deepEqual(computeTranscriptionCost({ provider: "local", model: "vosk-small-ru-2025-08-16", seconds: 60 }), {
+    priced: false,
+    cost: 0,
+    reason: "local",
+  });
+});
