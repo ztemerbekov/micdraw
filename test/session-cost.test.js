@@ -193,3 +193,9 @@ test("computeAgentCost prices the GPT-6 models offered in the OpenAI menu", () =
   assert.equal(computeAgentCost({ provider: "openai", model: "gpt-6-sol", usage }).cost.toFixed(6), (2.00 + 0.20 + 10.00).toFixed(6));
   assert.equal(computeAgentCost({ provider: "openai", model: "gpt-6.1-sol", usage }).cost.toFixed(6), (2.00 + 0.10 + 10.00).toFixed(6));
 });
+
+test("computeTranscriptionCost prices gpt-live-transcribe by the minute", () => {
+  // OpenAI list price, October 2026: $0.017 per minute of audio.
+  const cost = computeTranscriptionCost({ provider: "openai", model: "gpt-live-transcribe", seconds: 600 });
+  assert.equal(cost.cost.toFixed(4), (0.017 * 10).toFixed(4));
+});

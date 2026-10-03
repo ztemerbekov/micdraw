@@ -14,7 +14,10 @@ const OPENAI_REASONING_EFFORTS = new Set(["none", "low", "medium", "high", "xhig
 // OpenRouter fronts many vendors behind an OpenAI-shaped API, including the
 // `/responses` endpoint this app's OpenAI path already speaks, so the whole
 // provider is a base URL, a key and a model id. Grok is the default because it
-// answers a tool-call turn quickly; any OpenRouter model id works.
+// answers a tool-call turn quickly; any OpenRouter model id works. Reviewed
+// 2026-10-03 against OpenRouter's catalogue only, not verified live (#25):
+// Grok 4.3-4.7 are newer, but nothing public shows them faster and 4.5+ cost
+// more, so 4.20 stays until a measured turn says otherwise.
 export const DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 export const DEFAULT_OPENROUTER_AGENT_MODEL = "x-ai/grok-4.20";
 

@@ -613,3 +613,24 @@ test("createOpenAITranscription reports a missing API key without throwing", () 
   assert.equal(messages[0].type, "error");
   assert.match(messages[0].message, /OPENAI_API_KEY/);
 });
+
+test("gpt-live-transcribe gets the staging vocabulary and no turn detection", () => {
+  const socket = createMockSocket();
+  const transcription = createOpenAITranscription({
+    sendTranscript: () => {},
+    queueTranscript: () => {},
+    options: { openaiTranscriptionModel: "gpt-live-transcribe" },
+    env: { OPENAI_API_KEY: "sk-test" },
+    createWebSocket: () => socket,
+  });
+
+  transcription.setSessionContext({ keywords: ["Kafka"] });
+  transcription.sendAudio("a");
+  socket.emit("open");
+
+  const input = JSON.parse(socket.sent[0]).session.audio.input;
+  assert.equal(input.transcription.model, "gpt-live-transcribe");
+  assert.match(input.transcription.prompt, /Kafka/);
+  // OpenAI's docs: this model supports neither server_vad nor semantic_vad.
+  assert.equal(input.turn_detection, undefined);
+});

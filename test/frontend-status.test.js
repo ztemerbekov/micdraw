@@ -111,3 +111,10 @@ test("frontend draws agent previews without recentring and keeps new elements in
   // Elements the preview added or changed are scrolled into view only when off-screen.
   assert.match(appSource, /function followPreview\(changedIds\) \{[\s\S]*getAppState\(\)[\s\S]*scrollToContent\(targets, \{ animate: true \}\)/);
 });
+
+test("frontend offers only OpenAI models that realtime transcription serves, and a current Ollama example", () => {
+  const appSource = readFileSync(path.join(rootDir, "public", "app.js"), "utf8");
+  const models = appSource.match(/const OPENAI_TRANSCRIPTION_MODELS = (\[[^\]]*\])/)?.[1] ?? "[]";
+  assert.deepEqual(JSON.parse(models.replace(/,\s*\]/, "]")), ["gpt-live-transcribe", "gpt-realtime-whisper"]);
+  assert.match(appSource, /placeholder: "e\.g\. qwen3\.6"/);
+});

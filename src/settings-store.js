@@ -12,6 +12,11 @@ export const MAX_AGENT_INSTRUCTIONS_CHARS = 100_000;
 // still serves them, so API settings are left alone.
 const RETIRED_CODEX_MODELS = new Set(["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.3-codex-spark", "gpt-5.2"]);
 const CODEX_REPLACEMENT_MODEL = "gpt-6-luna";
+// OpenAI deprecated these for removal on 2027-02-26, and its model pages
+// already list realtime transcription as not supported. A saved pick moves to
+// the documented replacement (issue #26, checked against the docs only).
+const RETIRED_OPENAI_TRANSCRIPTION_MODELS = new Set(["whisper-1", "gpt-4o-transcribe", "gpt-4o-mini-transcribe"]);
+const OPENAI_TRANSCRIPTION_REPLACEMENT_MODEL = "gpt-live-transcribe";
 
 export const DEFAULT_SETTINGS = Object.freeze({
   agent: {
@@ -29,7 +34,10 @@ export const DEFAULT_SETTINGS = Object.freeze({
     language: "en",
     local: { models: {} },
     moonshine: { model: "medium" },
-    openai: { model: "gpt-realtime-whisper" },
+    // OpenAI's recommended realtime transcription model: same price as
+    // gpt-realtime-whisper, and it takes the vocabulary prompt. Chosen from
+    // the docs, not verified live (issue #26).
+    openai: { model: "gpt-live-transcribe" },
     // `keyterms` biases nova-3 toward words its language model has never seen -
     // product names, jargon, people in the room. Empty by default; the staging
     // board's own text is merged in on top of whatever is set here.
@@ -68,11 +76,11 @@ export function createSettingsStore({ filePath, env = process.env, readCodexAuth
     if (cached) return cached;
     const fromDisk = await readFromDisk();
     if (fromDisk) {
-      cached = replaceRetiredCodexModel(fromDisk);
+      cached = replaceRetiredModels(fromDisk);
       if (cached !== fromDisk) await writeToDisk(cached);
       return cached;
     }
-    const seeded = replaceRetiredCodexModel(seedFromEnv(cloneDefaults(), env, readCodexAuth));
+    const seeded = replaceRetiredModels(seedFromEnv(cloneDefaults(), env, readCodexAuth));
     await writeToDisk(seeded);
     cached = seeded;
     return cached;
@@ -104,14 +112,22 @@ export function createSettingsStore({ filePath, env = process.env, readCodexAuth
   return { load, save, getSanitized };
 }
 
-function replaceRetiredCodexModel(settings) {
-  const model = settings.agent?.codex?.model ?? "";
-  const fast = model.endsWith("-fast");
-  const base = fast ? model.slice(0, -"-fast".length) : model;
-  if (!RETIRED_CODEX_MODELS.has(base)) return settings;
-  const replacement = CODEX_REPLACEMENT_MODEL + (fast ? "-fast" : "");
-  console.log(`[micdraw] Codex no longer serves ${model}; switched the Codex agent model to ${replacement}.`);
-  return deepMerge(settings, { agent: { codex: { model: replacement } } });
+function replaceRetiredModels(settings) {
+  let next = settings;
+  const codexModel = next.agent?.codex?.model ?? "";
+  const fast = codexModel.endsWith("-fast");
+  const codexBase = fast ? codexModel.slice(0, -"-fast".length) : codexModel;
+  if (RETIRED_CODEX_MODELS.has(codexBase)) {
+    const replacement = CODEX_REPLACEMENT_MODEL + (fast ? "-fast" : "");
+    console.log(`[micdraw] Codex no longer serves ${codexModel}; switched the Codex agent model to ${replacement}.`);
+    next = deepMerge(next, { agent: { codex: { model: replacement } } });
+  }
+  const transcriptionModel = next.transcription?.openai?.model ?? "";
+  if (RETIRED_OPENAI_TRANSCRIPTION_MODELS.has(transcriptionModel)) {
+    console.log(`[micdraw] OpenAI realtime transcription no longer serves ${transcriptionModel}; switched to ${OPENAI_TRANSCRIPTION_REPLACEMENT_MODEL}.`);
+    next = deepMerge(next, { transcription: { openai: { model: OPENAI_TRANSCRIPTION_REPLACEMENT_MODEL } } });
+  }
+  return next;
 }
 
 function cloneDefaults() {

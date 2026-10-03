@@ -2,6 +2,10 @@ import { WebSocket } from "ws";
 
 const DEEPGRAM_LIVE_URL = "wss://api.deepgram.com/v1/listen";
 
+// Reviewed 2026-10-03 against Deepgram's docs only, not verified live (#27).
+// Flux is newer, but it needs the /v2/listen protocol and is tuned for voice
+// agents' turn-taking; nova-3 is Deepgram's pick for captioning and takes
+// keyterm hints.
 export const DEFAULT_DEEPGRAM_MODEL = "nova-3";
 
 // The browser streams PCM16LE mono at 24 kHz (see public/app.js SAMPLE_RATE and
