@@ -23,7 +23,7 @@ For anything bigger than a small fix, open an issue first so we can agree on the
 Maintainers release in two steps:
 
 1. A pull request runs `npm version X.Y.Z --no-git-tag-version` and renames `## Unreleased` in `CHANGELOG.md` to `## X.Y.Z (YYYY-MM-DD)`.
-2. After it merges, publish a GitHub Release with the tag `vX.Y.Z` on `main` and that changelog section as its notes. `.github/workflows/release.yml` checks the tag against `package.json`, runs the checks and publishes the package to npm.
+2. After it merges, publish a GitHub Release with the tag `vX.Y.Z` on `main` and that changelog section as its notes. `.github/workflows/release.yml` checks the tag against `package.json`, runs the checks and publishes the package to npm. Then it installs the published version with `npx` on Linux, macOS and Windows and runs `micdraw --help` (`.github/workflows/check-published-package.yml`).
 
 ## Questions
 
