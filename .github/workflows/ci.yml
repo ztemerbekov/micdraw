@@ -3,12 +3,18 @@ name: CI
 on:
   push:
     branches: [main]
+  # Every pull request, whatever its base, so a branch stacked on another
+  # branch is checked too.
   pull_request:
-    branches: [main]
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      # Let every system report, even when another one fails.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
