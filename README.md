@@ -132,7 +132,7 @@ Local transcription runs on your machine on macOS, Linux and Windows; see [Local
 
 On macOS you can also pick Moonshine small or tiny, or Kroko. Moonshine is the macOS default for English because it finishes a phrase about a second sooner at similar accuracy; the measurements are in [#3](https://github.com/ztemerbekov/micdraw/issues/3).
 
-sherpa-onnx models download once, on first use, from Hugging Face at a pinned commit, and every file is checked against its SHA-256 before it is used. They are stored in `~/.config/micdraw/models/`.
+sherpa-onnx models download once, on first use, from Hugging Face at a pinned commit, and every file is checked against its SHA-256 before it is used. They are stored in `~/.config/micdraw/models/`. The Voice row shows the download progress, and the previous model keeps transcribing until the new one is ready.
 
 | Model | Size | License | Source |
 | --- | --- | --- | --- |
