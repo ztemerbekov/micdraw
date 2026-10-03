@@ -83,3 +83,10 @@ test("frontend lets the speaker pick a local language and model", () => {
   assert.match(appSource, /local: \{ models: \{ \[language\]: localModelId \} \}/);
   assert.doesNotMatch(appSource, /MOONSHINE_MODELS/);
 });
+
+test("frontend shows voice model loading progress in the Voice row", () => {
+  const appSource = readFileSync(path.join(rootDir, "public", "app.js"), "utf8");
+  assert.match(appSource, /message\.type === "transcription:status"/);
+  assert.match(appSource, /setTranscriptionStatus\(config\.transcriptionStatus \?\? null\)/);
+  assert.match(appSource, /function voiceRowLabel\(base, status\)/);
+});

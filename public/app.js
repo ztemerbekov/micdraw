@@ -79,6 +79,7 @@ function App() {
   const [agentStatus, setAgentStatus] = React.useState("idle");
   const [transcriptionEngine, setTranscriptionEngine] =
     React.useState("loading");
+  const [transcriptionStatus, setTranscriptionStatus] = React.useState(null);
   const [settings, setSettings] = React.useState(null);
   const [localModels, setLocalModels] = React.useState([]);
   const [languages, setLanguages] = React.useState(["en"]);
@@ -221,6 +222,10 @@ function App() {
       const message = JSON.parse(event.data);
       if (message.type === "config")
         setTranscriptionEngine(message.transcriptionEngine);
+      if (message.type === "transcription:status") {
+        setTranscriptionStatus(message);
+        if (message.state === "ready") setSttError(false);
+      }
       if (message.type === "settings") setSettings(message.settings);
       if (message.type === "transcript:partial") {
         const text = (message.text ?? "").trim();
@@ -320,6 +325,7 @@ function App() {
       .then((res) => res.json())
       .then((config) => {
         setTranscriptionEngine(config.transcriptionEngine);
+        setTranscriptionStatus(config.transcriptionStatus ?? null);
         if (config.settings) setSettings(config.settings);
         setLocalModels(config.localModels ?? []);
         setLanguages(config.languages ?? ["en"]);
@@ -338,6 +344,7 @@ function App() {
     if (!res.ok) throw new Error(body.error || "Failed to save settings");
     setSettings(body.settings);
     setTranscriptionEngine(body.transcriptionEngine);
+    setTranscriptionStatus(body.transcriptionStatus ?? null);
     setSttError(false);
     setAgentError(false);
   }
@@ -666,11 +673,22 @@ function App() {
     : agentStatus === "thinking"
       ? "active"
       : "idle";
-  const sttState = sttError ? "error" : listening ? "active" : "idle";
+  const voiceLoading =
+    transcriptionStatus?.state === "preparing" ||
+    transcriptionStatus?.state === "downloading";
+  const sttState =
+    sttError || transcriptionStatus?.state === "error"
+      ? "error"
+      : listening || voiceLoading
+        ? "active"
+        : "idle";
   const agentLabel = settings ? agentModelLabel(settings) : "loading...";
-  const sttLabel = settings
-    ? sttModelLabel(settings, transcriptionEngine)
-    : transcriptionEngine;
+  const sttLabel = voiceRowLabel(
+    settings
+      ? sttModelLabel(settings, transcriptionEngine)
+      : transcriptionEngine,
+    transcriptionStatus,
+  );
   const micLabel = mic.label || "System default";
 
   return React.createElement(
@@ -1263,6 +1281,18 @@ function agentModelLabel(settings) {
   if (provider === "openrouter")
     return settings.agent.openrouter?.model || "(unset)";
   return settings.agent.openai.model;
+}
+
+// While a new voice model loads, the Voice row shows its progress; the
+// previous model keeps transcribing until then.
+function voiceRowLabel(base, status) {
+  if (!status || status.state === "ready") return base;
+  if (status.state === "error") return `${status.label} · failed`;
+  if (status.state === "downloading" && status.totalBytes) {
+    const percent = Math.floor((status.receivedBytes / status.totalBytes) * 100);
+    return `${status.label} · ${percent}%`;
+  }
+  return `${status.label} · loading…`;
 }
 
 // The server resolves a local model by language and platform, so its label

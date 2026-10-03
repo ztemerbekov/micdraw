@@ -75,6 +75,7 @@ export async function startServer(options) {
     const sanitized = options.settingsStore ? await options.settingsStore.getSanitized() : null;
     res.json({
       transcriptionEngine: transcription.getLabel(),
+      transcriptionStatus: transcription.getStatus(),
       settings: sanitized,
       languages: SUPPORTED_LANGUAGES,
       localModels: localModelSummaries(options.platform ?? process.platform),
@@ -159,9 +160,13 @@ export async function startServer(options) {
     if (!options.settingsStore) return res.status(404).json({ error: "Settings store not available." });
     try {
       await options.settingsStore.save(req.body ?? {});
-      await transcription.applyCurrent();
+      await transcription.applyInBackground();
       const sanitized = await options.settingsStore.getSanitized();
-      res.json({ settings: sanitized, transcriptionEngine: transcription.getLabel() });
+      res.json({
+        settings: sanitized,
+        transcriptionEngine: transcription.getLabel(),
+        transcriptionStatus: transcription.getStatus(),
+      });
       broadcast(wss, { type: "settings", settings: sanitized });
       broadcast(wss, { type: "config", transcriptionEngine: transcription.getLabel() });
     } catch (error) {
@@ -185,6 +190,7 @@ export async function startServer(options) {
     client.send(JSON.stringify({ type: "mode", mode: state.mode }));
     client.send(JSON.stringify({ type: "warmup", ...state.warmupState }));
     client.send(JSON.stringify({ type: "cost", ...state.cost.getSummary() }));
+    client.send(JSON.stringify({ type: "transcription:status", ...transcription.getStatus() }));
     if (state.mode === "live") {
       client.send(JSON.stringify({ type: "whiteboard:update", elements: state.elements }));
     }
@@ -237,7 +243,7 @@ export async function startServer(options) {
       if (message.type === "settings:update" && options.settingsStore) {
         try {
           await options.settingsStore.save(message.patch ?? {});
-          await transcription.applyCurrent();
+          await transcription.applyInBackground();
           const sanitized = await options.settingsStore.getSanitized();
           broadcast(wss, { type: "settings", settings: sanitized });
           broadcast(wss, { type: "config", transcriptionEngine: transcription.getLabel() });
@@ -313,6 +319,10 @@ async function createTranscriptionManager({ options, wss, queueTranscript, state
   let activeProvider = null;
   let activeModel = null;
   let lastCostBroadcastAt = 0;
+  // What the page shows in the Voice row while a new engine loads.
+  let status = { state: "preparing", label: "" };
+  let generation = 0;
+  let loading = null;
 
   const sendTranscript = (message) => broadcast(wss, message);
 
@@ -327,11 +337,12 @@ async function createTranscriptionManager({ options, wss, queueTranscript, state
     };
   }
 
-  function buildOptionsForFactory(settings, engine) {
+  function buildOptionsForFactory(settings, engine, onProgress) {
     const engineOptions = {
       moonshineModel: engine.moonshineModel ?? options.moonshineModel,
       localModel: engine.localModel,
       modelsDir: options.modelsDir,
+      onProgress,
     };
     if (!settings) return { ...options, ...engineOptions };
     return {
@@ -350,30 +361,83 @@ async function createTranscriptionManager({ options, wss, queueTranscript, state
     };
   }
 
-  async function applyCurrent() {
+  function setStatus(next) {
+    status = next;
+    broadcast(wss, { type: "transcription:status", ...status });
+  }
+
+  // Starts moving to the engine the settings select and resolves once that
+  // engine exists. `ready` settles when it takes over: the previous engine keeps
+  // transcribing until then, and stays in place if the new one fails to load.
+  // A newer choice discards an engine that is still loading.
+  async function beginApply() {
     const settings = options.settingsStore ? await options.settingsStore.load() : null;
     const engine = resolveTranscriptionEngine(transcriptionFrom(settings), options.platform ?? process.platform);
-    const newLabel = engine.label;
-    activeProvider = engine.provider;
-    activeModel = engine.model ?? null;
+    if (current && engine.label === label) {
+      generation += 1;
+      loading?.close();
+      loading = null;
+      setStatus({ state: "ready", label });
+      return { ready: Promise.resolve() };
+    }
 
-    if (current && newLabel === label) return;
-
-    if (current) current.close();
-
-    const factoryOptions = buildOptionsForFactory(settings, engine);
+    const myGeneration = ++generation;
+    const isLatest = () => myGeneration === generation;
+    loading?.close();
+    const factoryOptions = buildOptionsForFactory(settings, engine, (progress) => {
+      if (isLatest()) setStatus({ state: "downloading", label: engine.label, ...progress });
+    });
     const factory = options.createTranscription ?? transcriptionFactoryFor(engine.kind);
-    label = newLabel;
-    options.onStatus?.(`Preparing ${label} transcription model...`);
-    current = factory({
+    options.onStatus?.(`Preparing ${engine.label} transcription model...`);
+    setStatus({ state: "preparing", label: engine.label });
+    const next = factory({
       sendTranscript,
       queueTranscript,
       options: factoryOptions,
       env: factoryOptions.env,
     });
-    if (hasSessionContext) current.setSessionContext?.(sessionContext);
-    await current.ready();
-    options.onStatus?.(`${label} transcription model ready.`);
+    loading = next;
+    if (hasSessionContext) next.setSessionContext?.(sessionContext);
+
+    const ready = (async () => {
+      try {
+        await next.ready();
+      } catch (error) {
+        next.close();
+        if (loading === next) loading = null;
+        if (isLatest()) setStatus({ state: "error", label: engine.label, message: error.message });
+        throw error;
+      }
+      if (loading === next) loading = null;
+      if (!isLatest()) {
+        next.close();
+        return;
+      }
+      const previous = current;
+      current = next;
+      label = engine.label;
+      activeProvider = engine.provider;
+      activeModel = engine.model ?? null;
+      previous?.close();
+      options.onStatus?.(`${label} transcription model ready.`);
+      setStatus({ state: "ready", label });
+      broadcast(wss, { type: "config", transcriptionEngine: label });
+    })();
+    return { ready };
+  }
+
+  async function applyCurrent() {
+    const { ready } = await beginApply();
+    await ready;
+  }
+
+  // Settings changes return as soon as the new engine exists; the page follows
+  // its loading through transcription:status messages.
+  async function applyInBackground() {
+    const { ready } = await beginApply();
+    ready.catch((error) => {
+      broadcast(wss, { type: "error", message: `Voice model failed: ${error.message}` });
+    });
   }
 
   await applyCurrent();
@@ -397,14 +461,21 @@ async function createTranscriptionManager({ options, wss, queueTranscript, state
       }
     },
     stop: () => current?.stop(),
-    close: () => current?.close(),
+    close: () => {
+      generation += 1;
+      loading?.close();
+      loading = null;
+      current?.close();
+    },
     setSessionContext: (ctx) => {
       sessionContext = ctx;
       hasSessionContext = true;
       current?.setSessionContext?.(ctx);
     },
     getLabel: () => label,
+    getStatus: () => status,
     applyCurrent,
+    applyInBackground,
   };
 }
 

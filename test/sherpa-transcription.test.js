@@ -113,3 +113,21 @@ test("download progress is reported in 10% steps", async () => {
     "Downloading Vosk small (sherpa-onnx): 100%",
   ]);
 });
+
+test("download progress reaches onProgress once per whole percent", async () => {
+  const progress = [];
+  const sent = [];
+  const engine = createSherpaTranscription({
+    sendTranscript: (message) => sent.push(message),
+    queueTranscript: () => {},
+    options: { localModel: MODEL, modelsDir: "/models", onProgress: (event) => progress.push(event.receivedBytes) },
+    createWorker: (workerData) => new FakeWorker(workerData),
+    ensureModel: async (_model, { onProgress }) => {
+      for (const receivedBytes of [1, 1, 2, 50, 50, 100]) onProgress({ receivedBytes, totalBytes: 100 });
+      return FILES;
+    },
+  });
+  engine.ready();
+  await tick();
+  assert.deepEqual(progress, [1, 2, 50, 100]);
+});
