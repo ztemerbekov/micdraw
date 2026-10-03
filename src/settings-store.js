@@ -6,11 +6,18 @@ import { LOCAL_MODELS, SUPPORTED_LANGUAGES } from "./local-models.js";
 
 export const MAX_AGENT_INSTRUCTIONS_CHARS = 100_000;
 
+// Models that Codex with ChatGPT sign-in no longer serves (GPT-5.5 from
+// 2026-10-14). A saved pick of one of them would fail every agent turn, so
+// load() moves it to GPT-6 Luna and keeps the "-fast" suffix. The OpenAI API
+// still serves them, so API settings are left alone.
+const RETIRED_CODEX_MODELS = new Set(["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.3-codex-spark", "gpt-5.2"]);
+const CODEX_REPLACEMENT_MODEL = "gpt-6-luna";
+
 export const DEFAULT_SETTINGS = Object.freeze({
   agent: {
     provider: "openai",
-    openai: { model: "gpt-5.5", reasoningEffort: "low", baseURL: "https://api.openai.com/v1" },
-    codex: { model: "gpt-5.5-fast", baseURL: "https://chatgpt.com/backend-api/codex" },
+    openai: { model: "gpt-6-luna", reasoningEffort: "low", baseURL: "https://api.openai.com/v1" },
+    codex: { model: "gpt-6-luna-fast", baseURL: "https://chatgpt.com/backend-api/codex" },
     ollama: { model: "", baseURL: "http://localhost:11434/v1" },
     openrouter: { model: "x-ai/grok-4.20", baseURL: "https://openrouter.ai/api/v1" },
   },
@@ -61,10 +68,11 @@ export function createSettingsStore({ filePath, env = process.env, readCodexAuth
     if (cached) return cached;
     const fromDisk = await readFromDisk();
     if (fromDisk) {
-      cached = fromDisk;
+      cached = replaceRetiredCodexModel(fromDisk);
+      if (cached !== fromDisk) await writeToDisk(cached);
       return cached;
     }
-    const seeded = seedFromEnv(cloneDefaults(), env, readCodexAuth);
+    const seeded = replaceRetiredCodexModel(seedFromEnv(cloneDefaults(), env, readCodexAuth));
     await writeToDisk(seeded);
     cached = seeded;
     return cached;
@@ -94,6 +102,16 @@ export function createSettingsStore({ filePath, env = process.env, readCodexAuth
   }
 
   return { load, save, getSanitized };
+}
+
+function replaceRetiredCodexModel(settings) {
+  const model = settings.agent?.codex?.model ?? "";
+  const fast = model.endsWith("-fast");
+  const base = fast ? model.slice(0, -"-fast".length) : model;
+  if (!RETIRED_CODEX_MODELS.has(base)) return settings;
+  const replacement = CODEX_REPLACEMENT_MODEL + (fast ? "-fast" : "");
+  console.log(`[micdraw] Codex no longer serves ${model}; switched the Codex agent model to ${replacement}.`);
+  return deepMerge(settings, { agent: { codex: { model: replacement } } });
 }
 
 function cloneDefaults() {

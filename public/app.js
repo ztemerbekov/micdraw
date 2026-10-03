@@ -10,8 +10,10 @@ import { STARTER_ELEMENTS } from "./starter-elements.js";
 
 const SAMPLE_RATE = 24000;
 const REASONING_EFFORTS = ["none", "low", "medium", "high", "xhigh"];
-const OPENAI_AGENT_MODELS = ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini"];
-const CODEX_AGENT_MODELS = ["gpt-5.5-fast", "gpt-5.5", "gpt-5.4"];
+const OPENAI_AGENT_MODELS = ["gpt-6-luna", "gpt-6-sol", "gpt-6.1-sol", "gpt-5.5"];
+// "-fast" sends the request in Fast mode: quicker, but it uses more of the
+// ChatGPT plan.
+const CODEX_AGENT_MODELS = ["gpt-6-luna-fast", "gpt-6-luna", "gpt-6-sol-fast", "gpt-6-sol", "gpt-6.1-sol-fast", "gpt-6.1-sol"];
 const OPENAI_TRANSCRIPTION_MODELS = [
   "gpt-realtime-whisper",
   "gpt-4o-transcribe",
@@ -1897,10 +1899,13 @@ function localModelLabel(model) {
 }
 
 function select(value, onChange, options, disabled) {
+  // Keep a saved value that is not in the menu (an older model, say) visible
+  // and selected instead of silently showing the first option.
+  const shown = value && !options.includes(value) ? [value, ...options] : options;
   return React.createElement(
     "select",
     { value, onChange: (e) => onChange(e.target.value), disabled },
-    options.map((option) =>
+    shown.map((option) =>
       React.createElement("option", { key: option, value: option }, option),
     ),
   );

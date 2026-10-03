@@ -17,7 +17,8 @@ test("createSettingsStore returns defaults when file is missing and env is empty
   const store = createSettingsStore({ filePath: await tempPath(), env: {}, readCodexAuth: noCodexAuth });
   const settings = await store.load();
   assert.deepEqual(settings, DEFAULT_SETTINGS);
-  assert.equal(settings.agent.codex.model, "gpt-5.5-fast");
+  assert.equal(settings.agent.codex.model, "gpt-6-luna-fast");
+  assert.equal(settings.agent.openai.model, "gpt-6-luna");
 });
 
 test("createSettingsStore seeds settings from environment on first run", async () => {
@@ -330,4 +331,32 @@ test("createSettingsStore.save rejects unknown transcription choices", async () 
   await assert.rejects(store.save({ transcription: { language: "xx" } }), /language/);
   await assert.rejects(store.save({ transcription: { local: { models: { en: "vosk-small-ru-2025-08-16" } } } }), /local model/);
   await assert.rejects(store.save({ transcription: { local: { models: { xx: "kroko-en-2025-08-06" } } } }), /language/);
+});
+
+async function loadWithCodexModel(codexModel) {
+  const filePath = await tempPath();
+  await fs.writeFile(filePath, JSON.stringify({ agent: { provider: "codex", codex: { model: codexModel }, openai: { model: "gpt-5.5" } } }));
+  const store = createSettingsStore({ filePath, env: {}, readCodexAuth: noCodexAuth });
+  const settings = await store.load();
+  const onDisk = JSON.parse(await fs.readFile(filePath, "utf8"));
+  return { settings, onDisk };
+}
+
+test("load moves a Codex model that left Codex to GPT-6 Luna and keeps Fast mode", async () => {
+  const { settings, onDisk } = await loadWithCodexModel("gpt-5.5-fast");
+  assert.equal(settings.agent.codex.model, "gpt-6-luna-fast");
+  assert.equal(onDisk.agent.codex.model, "gpt-6-luna-fast");
+  // The OpenAI API keeps GPT-5.5, so an API pick stays.
+  assert.equal(settings.agent.openai.model, "gpt-5.5");
+});
+
+test("load moves a retired standard-mode Codex pick to standard GPT-6 Luna", async () => {
+  const { settings } = await loadWithCodexModel("gpt-5.4");
+  assert.equal(settings.agent.codex.model, "gpt-6-luna");
+});
+
+test("load keeps a Codex model that Codex still offers", async () => {
+  const { settings, onDisk } = await loadWithCodexModel("gpt-6-sol");
+  assert.equal(settings.agent.codex.model, "gpt-6-sol");
+  assert.equal(onDisk.agent.codex.model, "gpt-6-sol");
 });
