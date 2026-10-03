@@ -381,3 +381,18 @@ test("load keeps gpt-realtime-whisper, which realtime sessions still serve", asy
   const settings = await createSettingsStore({ filePath, env: {}, readCodexAuth: noCodexAuth }).load();
   assert.equal(settings.transcription.openai.model, "gpt-realtime-whisper");
 });
+
+test("save accepts a language the chosen transcription provider offers", async () => {
+  const store = createSettingsStore({ filePath: await tempPath(), env: {}, readCodexAuth: noCodexAuth });
+  await store.save({ transcription: { provider: "openai", language: "uk" } });
+  const settings = await store.save({ transcription: { provider: "deepgram", language: "multi" } });
+  assert.equal(settings.transcription.language, "multi");
+});
+
+test("save rejects a language the chosen transcription provider does not offer", async () => {
+  const store = createSettingsStore({ filePath: await tempPath(), env: {}, readCodexAuth: noCodexAuth });
+  await assert.rejects(() => store.save({ transcription: { provider: "local", language: "uk" } }), /Unsupported transcription language "uk"/);
+  await store.save({ transcription: { provider: "deepgram", language: "multi" } });
+  // Switching to a provider without that language must name a new one.
+  await assert.rejects(() => store.save({ transcription: { provider: "openai" } }), /Unsupported transcription language "multi"/);
+});

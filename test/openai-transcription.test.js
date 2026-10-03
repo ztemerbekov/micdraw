@@ -634,3 +634,30 @@ test("gpt-live-transcribe gets the staging vocabulary and no turn detection", ()
   // OpenAI's docs: this model supports neither server_vad nor semantic_vad.
   assert.equal(input.turn_detection, undefined);
 });
+
+function firstSessionUpdate(model, transcriptionLanguage) {
+  const socket = createMockSocket();
+  const transcription = createOpenAITranscription({
+    sendTranscript: () => {},
+    queueTranscript: () => {},
+    options: { openaiTranscriptionModel: model, transcriptionLanguage },
+    env: { OPENAI_API_KEY: "sk-test" },
+    createWebSocket: () => socket,
+  });
+  transcription.sendAudio("a");
+  socket.emit("open");
+  return JSON.parse(socket.sent[0]).session.audio.input.transcription;
+}
+
+test("gpt-live-transcribe gets the chosen language as a language hint", () => {
+  assert.deepEqual(firstSessionUpdate("gpt-live-transcribe", "ru").languages, ["ru"]);
+  // Mandarin in simplified characters.
+  assert.deepEqual(firstSessionUpdate("gpt-live-transcribe", "zh").languages, ["zh-cn"]);
+  assert.equal(firstSessionUpdate("gpt-live-transcribe", undefined).languages, undefined);
+});
+
+test("models without documented language hints get none", () => {
+  const transcription = firstSessionUpdate("gpt-realtime-whisper", "ru");
+  assert.equal(transcription.languages, undefined);
+  assert.equal(transcription.language, undefined);
+});

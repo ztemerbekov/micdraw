@@ -450,3 +450,11 @@ test("ready resolves on open and rejects when the socket dies first", async () =
   second.socket.emit("close");
   await assert.rejects(failing, /closed before it was ready/);
 });
+
+test("buildDeepgramUrl passes the chosen language, mixed speech and Mandarin included", () => {
+  assert.equal(new URL(buildDeepgramUrl({ language: "ru" })).searchParams.get("language"), "ru");
+  assert.equal(new URL(buildDeepgramUrl({ language: "multi" })).searchParams.get("language"), "multi");
+  assert.equal(new URL(buildDeepgramUrl({ language: "zh" })).searchParams.get("language"), "zh-CN");
+  // No choice leaves Deepgram's own default.
+  assert.equal(new URL(buildDeepgramUrl()).searchParams.has("language"), false);
+});

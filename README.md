@@ -143,6 +143,12 @@ sherpa-onnx models download once, on first use, from Hugging Face at a pinned co
 
 Moonshine runs as a native sidecar on `darwin-arm64` and `darwin-x64`. For now these are the sidecar builds published by autopreso (`@autopreso/moonshine-darwin-*`).
 
+## Languages in the cloud
+
+OpenAI Realtime and Deepgram transcribe 16 languages: English, Russian, German, French, Spanish, Mandarin Chinese, Portuguese, Italian, Japanese, Korean, Hindi, Ukrainian, Polish, Turkish, Dutch and Arabic. Pick one in the Voice panel; the engine gets it as a hint (`languages` for OpenAI `gpt-live-transcribe`, `language` for Deepgram). Deepgram also offers **Mixed languages** (`multi`) for a talk that switches between English, Spanish, French, German, Hindi, Russian, Portuguese, Japanese, Italian and Dutch, such as Russian with English terms. OpenAI `gpt-realtime-whisper` takes no language hint and detects the language itself.
+
+These settings follow the vendors' documentation and have not been verified live yet.
+
 ## Deepgram transcription
 
 Deepgram is a third speech engine alongside Moonshine and OpenAI Realtime. It is a hosted

@@ -79,8 +79,8 @@ test("frontend lets the speaker pick a local language and model", () => {
   const appSource = readFileSync(path.join(rootDir, "public", "app.js"), "utf8");
   assert.match(appSource, /setLocalModels\(config\.localModels \?\? \[\]\)/);
   assert.match(appSource, /\{ value: "local" \}/);
-  assert.match(appSource, /const LANGUAGE_LABELS = \{ en: "English", ru: "Русский" \}/);
-  assert.match(appSource, /local: \{ models: \{ \[language\]: localModelId \} \}/);
+  assert.match(appSource, /const LANGUAGE_LABELS = \{\s*en: "English",\s*ru: "Русский",/);
+  assert.match(appSource, /patch\.transcription\.local = \{ models: \{ \[language\]: localModelId \} \}/);
   assert.doesNotMatch(appSource, /MOONSHINE_MODELS/);
 });
 
@@ -117,4 +117,14 @@ test("frontend offers only OpenAI models that realtime transcription serves, and
   const models = appSource.match(/const OPENAI_TRANSCRIPTION_MODELS = (\[[^\]]*\])/)?.[1] ?? "[]";
   assert.deepEqual(JSON.parse(models.replace(/,\s*\]/, "]")), ["gpt-live-transcribe", "gpt-realtime-whisper"]);
   assert.match(appSource, /placeholder: "e\.g\. qwen3\.6"/);
+});
+
+test("frontend lets the speaker pick a language for every transcription provider", () => {
+  const appSource = readFileSync(path.join(rootDir, "public", "app.js"), "utf8");
+  // The language field is no longer local-only, and lists what the provider offers.
+  assert.match(appSource, /field\(\s*"Language",\s*labeledSelect\(\s*language,\s*chooseLanguage,\s*providerLanguages\.map/);
+  assert.match(appSource, /const providerLanguages = languages\[provider === "moonshine" \? "local" : provider\] \?\? \["en"\];/);
+  for (const label of ["Українська", "Polski", "Türkçe", "Nederlands", "العربية", "日本語", "한국어", "हिन्दी", "Português", "Italiano", "Mixed languages"]) {
+    assert.ok(appSource.includes(label), `missing language label ${label}`);
+  }
 });
