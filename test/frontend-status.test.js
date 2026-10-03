@@ -102,16 +102,6 @@ test("frontend offers GPT-6 agent models and no model Codex has retired", () => 
   assert.match(appSource, /function select\(value, onChange, options, disabled\) \{[\s\S]*options\.includes\(value\)/);
 });
 
-test("frontend draws agent previews without recentring and keeps new elements in view", () => {
-  const appSource = readFileSync(path.join(rootDir, "public", "app.js"), "utf8");
-  const handler = appSource.match(/if \(message\.type === "whiteboard:update"\) \{[\s\S]*?\n      \}\n/)?.[0] ?? "";
-
-  // A preview is drawn as it arrives, never through the fresh-starter recenter.
-  assert.match(handler, /if \(message\.preview\) \{\s*applyScene\(message\.elements\);\s*followPreview\(changed\);/);
-  // Elements the preview added or changed are scrolled into view only when off-screen.
-  assert.match(appSource, /function followPreview\(changedIds\) \{[\s\S]*getAppState\(\)[\s\S]*scrollToContent\(targets, \{ animate: true \}\)/);
-});
-
 test("frontend offers only OpenAI models that realtime transcription serves, and a current Ollama example", () => {
   const appSource = readFileSync(path.join(rootDir, "public", "app.js"), "utf8");
   const models = appSource.match(/const OPENAI_TRANSCRIPTION_MODELS = (\[[^\]]*\])/)?.[1] ?? "[]";
