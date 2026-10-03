@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { streamText } from "ai";
-import { MockLanguageModelV3, convertArrayToReadableStream } from "ai/test";
+import { MockLanguageModelV3, convertArrayToReadableStream, simulateReadableStream } from "ai/test";
 import { WebSocket } from "ws";
 
 import { createArrayItemScanner, runWhiteboardAgent } from "../src/server.js";
@@ -14,7 +14,7 @@ const usage = {
 };
 
 // One whiteboard tool call streamed the way the Codex backend sends it: the
-// arguments arrive in small pieces before the call completes.
+// arguments arrive in small pieces, a moment apart, before the call completes.
 function toolCallStream(toolName, input) {
   const json = JSON.stringify(input);
   const pieces = json.match(/[\s\S]{1,16}/g) ?? [];
@@ -39,7 +39,7 @@ const doneStream = [
 async function streamTurn({ toolName, input, session }) {
   const model = new MockLanguageModelV3({
     doStream: [
-      { stream: convertArrayToReadableStream(toolCallStream(toolName, input)) },
+      { stream: simulateReadableStream({ chunks: toolCallStream(toolName, input), chunkDelayInMs: 1 }) },
       { stream: convertArrayToReadableStream(doneStream) },
     ],
   });
@@ -57,6 +57,22 @@ async function streamTurn({ toolName, input, session }) {
 
 const box = (id, x) => ({ type: "rectangle", id, x, y: 0, width: 120, height: 60 });
 
+// How many previews arrive depends on timing; what must hold is that each one
+// is a growing slice of the final board and that the final board comes last.
+function assertPreviewsLeadTo(updates, finalElements) {
+  const final = updates.at(-1);
+  assert.deepEqual(final, { type: "whiteboard:update", elements: finalElements });
+  const previews = updates.slice(0, -1);
+  assert.ok(previews.length > 0, "at least one preview before the finished edit");
+  let shown = 0;
+  for (const preview of previews) {
+    assert.equal(preview.preview, true);
+    assert.ok(preview.elements.length > shown && preview.elements.length < finalElements.length);
+    assert.deepEqual(preview.elements, finalElements.slice(0, preview.elements.length));
+    shown = preview.elements.length;
+  }
+}
+
 test("a whiteboard edit shows each finished operation while the agent is still writing", async () => {
   const { updates, state } = await streamTurn({
     toolName: "whiteboard_apply",
@@ -67,10 +83,7 @@ test("a whiteboard edit shows each finished operation while the agent is still w
       ],
     },
   });
-  assert.deepEqual(updates, [
-    { type: "whiteboard:update", preview: true, elements: [box("a", 0)] },
-    { type: "whiteboard:update", elements: [box("a", 0), box("b", 200)] },
-  ]);
+  assertPreviewsLeadTo(updates, [box("a", 0), box("b", 200)]);
   assert.deepEqual(state.elements, [box("a", 0), box("b", 200)]);
 });
 
@@ -79,11 +92,7 @@ test("a whiteboard overwrite shows each finished element while the agent is stil
     toolName: "whiteboard_overwrite",
     input: { elements: [box("a", 0), box("b", 200), box("c", 400)] },
   });
-  assert.deepEqual(updates, [
-    { type: "whiteboard:update", preview: true, elements: [box("a", 0)] },
-    { type: "whiteboard:update", preview: true, elements: [box("a", 0), box("b", 200)] },
-    { type: "whiteboard:update", elements: [box("a", 0), box("b", 200), box("c", 400)] },
-  ]);
+  assertPreviewsLeadTo(updates, [box("a", 0), box("b", 200), box("c", 400)]);
 });
 
 test("an edit that fails takes its preview back off the canvas", async () => {
