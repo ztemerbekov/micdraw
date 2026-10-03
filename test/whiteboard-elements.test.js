@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { detectMalformedLayoutWarnings, normalizeWhiteboardElements } from "../src/whiteboard-elements.js";
+import { detectMalformedLayoutWarnings, fitShapesToLabels, normalizeWhiteboardElements } from "../src/whiteboard-elements.js";
 
 test("normalizeWhiteboardElements returns an empty array for non-array input", () => {
   assert.deepEqual(normalizeWhiteboardElements(undefined), []);
@@ -102,4 +102,51 @@ test("detectMalformedLayoutWarnings is silent on a properly-sized labeled shape"
     },
   ]);
   assert.equal(warnings.length, 0);
+});
+
+test("detectMalformedLayoutWarnings measures labels with Excalidraw's 5 px padding, not 24 px", () => {
+  // From a real session: "смысловые задачи" at 18 px is about 173 px wide, so a
+  // 220 px card fits it with Excalidraw's padding. The old 24 px rule wanted
+  // 221 px and cost a whole extra agent pass.
+  const warnings = detectMalformedLayoutWarnings([
+    {
+      type: "rectangle",
+      id: "perf-3",
+      x: 680,
+      y: 130,
+      width: 220,
+      height: 110,
+      label: { text: "Выделить\nсмысловые задачи", fontSize: 18 },
+    },
+  ]);
+  assert.deepEqual(warnings, []);
+});
+
+// "Replay real turns on each model" is 31 characters: about 335 px at 18 px.
+const longLabel = { text: "Replay real turns on each model", fontSize: 18 };
+const card = { type: "rectangle", id: "card", x: 100, y: 100, width: 249, height: 110, label: longLabel };
+
+test("fitShapesToLabels widens a shape around its centre to fit its label with 24 px of padding", () => {
+  const fitted = fitShapesToLabels([card]);
+  assert.deepEqual(fitted, [{ ...card, x: 33, width: 383 }]);
+  assert.deepEqual(detectMalformedLayoutWarnings(fitted), []);
+});
+
+test("fitShapesToLabels settles for Excalidraw's own padding when the roomier size would hit a neighbour", () => {
+  const neighbour = { type: "rectangle", id: "next", x: 410, y: 100, width: 200, height: 110 };
+  const fitted = fitShapesToLabels([card, neighbour]);
+  assert.deepEqual(fitted, [{ ...card, x: 52, width: 345 }, neighbour]);
+});
+
+test("fitShapesToLabels leaves a shape it cannot grow without overlap, and the warning stays", () => {
+  const neighbour = { type: "rectangle", id: "next", x: 380, y: 100, width: 200, height: 110 };
+  const fitted = fitShapesToLabels([card, neighbour]);
+  assert.deepEqual(fitted, [card, neighbour]);
+  assert.equal(detectMalformedLayoutWarnings(fitted).length, 1);
+});
+
+test("fitShapesToLabels still grows a shape that sits inside a larger container shape", () => {
+  const lane = { type: "rectangle", id: "lane", x: 0, y: 50, width: 800, height: 300 };
+  const fitted = fitShapesToLabels([lane, card]);
+  assert.deepEqual(fitted, [lane, { ...card, x: 33, width: 383 }]);
 });

@@ -53,7 +53,8 @@ test("whiteboard prompt makes the agent responsible for final canvas geometry", 
   const prompt = whiteboardSystemPrompt();
 
   assert.match(prompt, /Your coordinates and sizes are used directly/);
-  assert.match(prompt, /The app does not automatically fix spacing, resize shapes, wrap labels, or reroute arrows/);
+  assert.match(prompt, /The app only grows a shape whose label would overflow, and only when the bigger shape overlaps nothing new/);
+  assert.match(prompt, /It does not fix spacing, wrap labels, or reroute arrows/);
   assert.match(prompt, /Before editing the whiteboard, mentally check the rendered scene/);
 });
 
