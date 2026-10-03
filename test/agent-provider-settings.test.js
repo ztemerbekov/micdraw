@@ -234,3 +234,32 @@ test("resolveAgentProviderFromSettings refuses OpenRouter without a key", () => 
     /OpenRouter API key is not configured/,
   );
 });
+
+test("resolveAgentProviderFromSettings returns an xAI provider with the xAI key and no reasoningEffort", () => {
+  const settings = settingsBase();
+  settings.agent.provider = "xai";
+  settings.agent.xai = { model: "grok-4.3", baseURL: "https://api.x.ai/v1/" };
+  /** @type {any} */ (settings.apiKeys).xai = "xai-from-settings";
+  // An OpenAI key lying around must not be spent on xAI.
+  settings.apiKeys.openai = "sk-openai";
+  settings.agent.openai.reasoningEffort = "xhigh";
+
+  assert.deepEqual(resolveAgentProviderFromSettings({ settings, env: {} }), {
+    provider: "xai",
+    model: "grok-4.3",
+    apiKey: "xai-from-settings",
+    baseURL: "https://api.x.ai/v1",
+  });
+});
+
+test("the xAI provider falls back to XAI_API_KEY and the default model, and needs a key", () => {
+  const settings = settingsBase();
+  settings.agent.provider = "xai";
+  settings.agent.xai = { model: "", baseURL: "" };
+
+  const resolved = resolveAgentProviderFromSettings({ settings, env: { XAI_API_KEY: "xai-env" } });
+  assert.equal(resolved.apiKey, "xai-env");
+  assert.equal(resolved.model, "grok-4.3");
+  assert.equal(resolved.baseURL, "https://api.x.ai/v1");
+  assert.throws(() => resolveAgentProviderFromSettings({ settings, env: {} }), /xAI API key is not configured/);
+});

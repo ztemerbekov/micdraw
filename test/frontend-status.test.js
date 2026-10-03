@@ -137,3 +137,15 @@ test("frontend pushes the live board only after the user touched the canvas", ()
   assert.match(handler, /userTouchedCanvasRef\.current = false;\s*ws\.send\(/);
   assert.match(appSource, /function applyScene\(elements, \{ recenter = false \} = \{\}\) \{[\s\S]*?userTouchedCanvasRef\.current = false;/);
 });
+
+test("frontend offers xAI for the agent and for speech, with one xAI key", () => {
+  const appSource = readFileSync(path.join(rootDir, "public", "app.js"), "utf8");
+  // One option in the agent editor and one in the Voice editor.
+  assert.equal((appSource.match(/React\.createElement\("option", \{ value: "xai" \}, "xAI"\)/g) ?? []).length, 2);
+  assert.match(appSource, /patch\.agent\.xai\.model = xaiModel;/);
+  assert.match(appSource, /patch\.agent\.xai\.baseURL = xaiBaseURL;/);
+  // Both editors save the key under the same name, and ask for it only when none is set.
+  assert.equal((appSource.match(/if \(xaiKey\) apiKeys\.xai = xaiKey;/g) ?? []).length, 2);
+  assert.equal((appSource.match(/provider === "xai" && !settings\.hasXaiKey && !xaiKey/g) ?? []).length, 2);
+  assert.match(appSource, /const XAI_MODEL_PLACEHOLDER = "e\.g\. grok-4\.3";/);
+});

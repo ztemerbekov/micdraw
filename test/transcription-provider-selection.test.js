@@ -6,11 +6,23 @@ import { createMoonshineTranscription } from "../src/moonshine-transcription.js"
 import { createOpenAITranscription } from "../src/openai-transcription.js";
 import { resolveTranscriptionEngine, transcriptionFactoryFor } from "../src/server.js";
 import { createSherpaTranscription } from "../src/sherpa-transcription.js";
+import { createXaiTranscription } from "../src/xai-transcription.js";
 
 test("transcriptionFactoryFor maps each provider name to its factory", () => {
   assert.equal(transcriptionFactoryFor("deepgram"), createDeepgramTranscription);
   assert.equal(transcriptionFactoryFor("openai"), createOpenAITranscription);
   assert.equal(transcriptionFactoryFor("moonshine"), createMoonshineTranscription);
+  assert.equal(transcriptionFactoryFor("xai"), createXaiTranscription);
+});
+
+test("xAI speech resolves to its streaming model in the chosen language", () => {
+  assert.deepEqual(resolveTranscriptionEngine({ provider: "xai", language: "ru" }, "darwin"), {
+    kind: "xai",
+    provider: "xai",
+    model: "grok-voice-transcribe-2.0",
+    label: "xAI grok-voice-transcribe-2.0",
+    language: "ru",
+  });
 });
 
 test("an unset or unknown provider falls back to the engine that needs no key", () => {

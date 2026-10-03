@@ -3,6 +3,7 @@
 ## Unreleased
 
 - When an edit leaves two elements with the same id, the agent gets a warning naming their lines and fixes it on its next step, instead of leaving a stray copy on the board.
+- xAI works as an agent provider (Grok, `grok-4.3` by default) and as a speech engine (`grok-voice-transcribe-2.0`, 14 of the 16 cloud languages), with one key for both. Ported from autopreso#24 by Julien Talbot; checked against xAI's docs, not verified live.
 
 ## 0.2.0 (2026-10-03)
 

@@ -55,6 +55,13 @@ async function main() {
     return;
   }
 
+  if (settings.transcription.provider === "xai" && !(settings.apiKeys?.xai || process.env.XAI_API_KEY)) {
+    console.error("xAI transcription is selected but no API key is configured.");
+    console.error("Open the app and add the key in the STT engine row, or set XAI_API_KEY in your shell.");
+    process.exitCode = 1;
+    return;
+  }
+
   const { url } = await startServer({
     ...options,
     settingsStore,
@@ -97,6 +104,9 @@ Environment:
   OPENROUTER_API_KEY       Seeds the OpenRouter agent key on first run
   OPENROUTER_MODEL         Seeds the OpenRouter agent model on first run. Default: x-ai/grok-4.20
   OPENROUTER_BASE_URL      Seeds the OpenRouter API base URL on first run
+  XAI_API_KEY              Seeds the xAI key, for the agent and speech-to-text, on first run
+  XAI_MODEL                Seeds the xAI agent model on first run. Default: grok-4.3
+  XAI_BASE_URL             Seeds the xAI API base URL on first run
   MICDRAW_CACHE_LOG        Cache usage log path. Default: ~/.config/micdraw/logs/cache.log
   MICDRAW_DEBUG_LOG        Agent debug log path. Default: ~/.config/micdraw/logs/debug.log
 

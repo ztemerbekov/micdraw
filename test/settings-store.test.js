@@ -437,3 +437,59 @@ test("save rejects a language the chosen transcription provider does not offer",
   // Switching to a provider without that language must name a new one.
   await assert.rejects(() => store.save({ transcription: { provider: "openai" } }), /Unsupported transcription language "multi"/);
 });
+
+test("createSettingsStore ships xAI defaults", async () => {
+  const settings = await createSettingsStore({ filePath: await tempPath(), env: {}, readCodexAuth: noCodexAuth }).load();
+  assert.equal(settings.agent.xai.model, "grok-4.3");
+  assert.equal(settings.agent.xai.baseURL, "https://api.x.ai/v1");
+  assert.equal(settings.apiKeys.xai, "");
+});
+
+test("an xAI key in env picks xAI for the agent and for speech when nothing else does", async () => {
+  const settings = await createSettingsStore({
+    filePath: await tempPath(),
+    env: { XAI_API_KEY: "xai-env", XAI_MODEL: "grok-4.7", XAI_BASE_URL: "https://proxy.example.test/v1" },
+    readCodexAuth: noCodexAuth,
+  }).load();
+  assert.equal(settings.apiKeys.xai, "xai-env");
+  assert.equal(settings.agent.xai.model, "grok-4.7");
+  assert.equal(settings.agent.xai.baseURL, "https://proxy.example.test/v1");
+  assert.equal(settings.agent.provider, "xai");
+  assert.equal(settings.transcription.provider, "xai");
+});
+
+test("an xAI key outranks an OpenAI key for the agent, and an OpenAI key outranks it for speech", async () => {
+  const settings = await createSettingsStore({
+    filePath: await tempPath(),
+    env: { XAI_API_KEY: "xai-env", OPENAI_API_KEY: "sk-env" },
+    readCodexAuth: noCodexAuth,
+  }).load();
+  assert.equal(settings.agent.provider, "xai");
+  assert.equal(settings.transcription.provider, "openai");
+  assert.equal(settings.apiKeys.xai, "xai-env");
+  assert.equal(settings.apiKeys.openai, "sk-env");
+});
+
+test("getSanitized reports the xAI key as a boolean and never returns it", async () => {
+  const store = createSettingsStore({ filePath: await tempPath(), env: { XAI_API_KEY: "xai-secret" }, readCodexAuth: noCodexAuth });
+  await store.load();
+  const sanitized = await store.getSanitized();
+  assert.equal(sanitized.hasXaiKey, true);
+  assert.equal(JSON.stringify(sanitized).includes("xai-secret"), false);
+});
+
+test("save accepts xAI speech in a language xAI offers and rejects one it does not", async () => {
+  const store = createSettingsStore({ filePath: await tempPath(), env: {}, readCodexAuth: noCodexAuth });
+  await store.load();
+  await store.save({ transcription: { provider: "xai", language: "ru" } });
+  assert.equal((await store.load()).transcription.provider, "xai");
+  // xAI's speech-to-text does not list Chinese or Ukrainian.
+  await assert.rejects(store.save({ transcription: { language: "zh" } }), /language/);
+  await assert.rejects(store.save({ transcription: { language: "uk" } }), /language/);
+});
+
+test("save rejects an xAI base URL that is not http or https", async () => {
+  const store = createSettingsStore({ filePath: await tempPath(), env: {}, readCodexAuth: noCodexAuth });
+  await store.load();
+  await assert.rejects(store.save({ agent: { xai: { baseURL: "ftp://example.test" } } }), /xai base URL/);
+});
