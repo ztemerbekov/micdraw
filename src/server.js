@@ -234,8 +234,10 @@ export async function startServer(options) {
       if (message.type === "whiteboard:user-elements" && Array.isArray(message.elements)) {
         // The user can draw on the live canvas before clicking Start listening
         // (and during it). Frontend pushes the current scene here so the next
-        // transcript turn has fresh elements available to the agent.
-        if (state.mode === "live") {
+        // transcript turn has fresh elements available to the agent. While a
+        // turn runs, the page can echo the agent's half-written edit back;
+        // taking that as the board would make the finished edit land twice.
+        if (state.mode === "live" && !state.agentBusy) {
           state.elements = message.elements;
         }
       }
@@ -488,6 +490,7 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
   // NOT consult this - we paid for the tokens regardless.
   // (Tests/scaffolds without a session token are treated as always-active.)
   const mySession = state.session ?? { active: true };
+  const preview = createEditPreview({ state, wss, mySession });
   // Only attach the live screenshot when the canvas has been edited since the
   // last attach. On DONE-only turns nothing changed, so the screenshot adds
   // ~7-10k tokens of noise without giving the agent new visual info.
@@ -552,6 +555,7 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
           state.elements = normalizedElements;
           state.canvasDirtyForAgent = true;
           broadcast(wss, { type: "whiteboard:update", elements: normalizedElements });
+          preview.confirm();
           const result = appendLayoutWarnings(formatLineNumberedWhiteboard(normalizedElements), normalizedElements);
           dumpToolCall("whiteboard_overwrite", { elementCount: elements.length, ids: elements.map((el) => el.id) }, normalizedElements.map((el) => el.id), result);
           options.onAgentEvent?.({ type: "tool:end", tool: "whiteboard_overwrite", result, elements: normalizedElements, timestamp: new Date().toISOString() });
@@ -585,6 +589,7 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
             state.elements = nextElements;
             state.canvasDirtyForAgent = true;
             broadcast(wss, { type: "whiteboard:update", elements: nextElements });
+            preview.confirm();
             canvasResult = appendLayoutWarnings(formatLineNumberedWhiteboard(nextElements), nextElements);
           }
 
@@ -626,11 +631,16 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
     },
   };
 
-  const result = await withTimeout(
-    runWhiteboardAgentGeneration(agentProvider, agentCallOptions, { generateTextFn, streamTextFn }),
-    options.agentTimeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS,
-    "Whiteboard agent timed out",
-  );
+  let result;
+  try {
+    result = await withTimeout(
+      runWhiteboardAgentGeneration(agentProvider, agentCallOptions, { generateTextFn, streamTextFn, onChunk: preview.onChunk }),
+      options.agentTimeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS,
+      "Whiteboard agent timed out",
+    );
+  } finally {
+    preview.settle();
+  }
   logAgentUsage("turn", result, {
     transcript: transcript?.slice(0, 80),
     fingerprints: {
@@ -657,15 +667,115 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
 // broadcast a whiteboard:update for the late edit.
 const STALE_SESSION_TOOL_RESULT = "Session has ended; the requested edit was not applied.";
 
+// Draws a whiteboard edit while the model is still writing it. An operation
+// (or, for an overwrite, an element) is shown as soon as the model moves on to
+// the next one, so nothing half-written reaches the page. The tool's execute
+// still applies the finished call; if it never does, settle() puts the real
+// board back.
+function createEditPreview({ state, wss, mySession }) {
+  const calls = new Map();
+  let unconfirmed = false;
+  return {
+    onChunk({ chunk }) {
+      if (chunk.type === "tool-input-start") {
+        const key = chunk.toolName === "whiteboard_apply" ? "operations" : chunk.toolName === "whiteboard_overwrite" ? "elements" : null;
+        if (key) calls.set(chunk.id, { toolName: chunk.toolName, scanner: createArrayItemScanner(key), base: state.elements });
+        return;
+      }
+      if (chunk.type !== "tool-input-delta") return;
+      const call = calls.get(chunk.id);
+      if (!call || !call.scanner.push(chunk.delta) || !mySession.active) return;
+      let elements;
+      try {
+        elements = call.toolName === "whiteboard_apply" ? applyWhiteboardEditOperations(call.base, call.scanner.items) : call.scanner.items;
+      } catch {
+        return;
+      }
+      unconfirmed = true;
+      broadcast(wss, { type: "whiteboard:update", preview: true, elements: fitShapesToLabels(normalizeWhiteboardElements(elements)) });
+    },
+    confirm() {
+      calls.clear();
+      unconfirmed = false;
+    },
+    settle() {
+      if (unconfirmed && mySession.active) broadcast(wss, { type: "whiteboard:update", elements: state.elements });
+      unconfirmed = false;
+    },
+  };
+}
+
+// Collects the objects of one top-level array (`{"<key>": [{...}, {...}]}`)
+// from JSON that arrives in pieces. An object counts once the comma after it
+// arrives; the last one is left to the finished tool call. push() returns
+// true when items grew.
+export function createArrayItemScanner(key) {
+  let text = "";
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  let stringStart = -1;
+  let lastTopLevelString = null;
+  let inArray = false;
+  let itemStart = -1;
+  let pending = null;
+  const items = [];
+  return {
+    items,
+    push(delta) {
+      const before = items.length;
+      for (const ch of delta) {
+        const i = text.length;
+        text += ch;
+        if (inString) {
+          if (escaped) escaped = false;
+          else if (ch === "\\") escaped = true;
+          else if (ch === '"') {
+            inString = false;
+            if (depth === 1) lastTopLevelString = text.slice(stringStart + 1, i);
+          }
+          continue;
+        }
+        if (ch === '"') {
+          inString = true;
+          stringStart = i;
+        } else if (ch === "{" || ch === "[") {
+          if (ch === "[" && depth === 1 && lastTopLevelString === key) inArray = true;
+          if (ch === "{" && inArray && depth === 2) itemStart = i;
+          depth += 1;
+        } else if (ch === "}" || ch === "]") {
+          depth -= 1;
+          if (ch === "}" && inArray && depth === 2 && itemStart >= 0) {
+            try {
+              pending = JSON.parse(text.slice(itemStart, i + 1));
+            } catch {
+              pending = null;
+            }
+            itemStart = -1;
+          }
+          if (ch === "]" && inArray && depth === 1) {
+            inArray = false;
+            pending = null;
+          }
+        } else if (ch === "," && inArray && depth === 2 && pending) {
+          items.push(pending);
+          pending = null;
+        }
+      }
+      return items.length > before;
+    },
+  };
+}
+
 function appendLayoutWarnings(formattedBoard, elements) {
   const warnings = detectMalformedLayoutWarnings(elements);
   if (warnings.length === 0) return formattedBoard;
   return `${formattedBoard}\n\n${warnings.map((w, i) => `WARNING ${i + 1}: ${w}`).join("\n")}\n\nFix the warnings above on your next edit so the rendered scene actually looks right.`;
 }
 
-async function runWhiteboardAgentGeneration(agentProvider, agentCallOptions, { generateTextFn, streamTextFn }) {
+async function runWhiteboardAgentGeneration(agentProvider, agentCallOptions, { generateTextFn, streamTextFn, onChunk = undefined }) {
   if (agentProvider.provider !== "codex") return generateTextFn(agentCallOptions);
-  const stream = streamTextFn(agentCallOptions);
+  const stream = streamTextFn(onChunk ? { ...agentCallOptions, onChunk } : agentCallOptions);
   await stream.consumeStream();
   // streamText exposes the final values as promise-properties on the result.
   // After consumeStream resolves they resolve too. Read them defensively so
