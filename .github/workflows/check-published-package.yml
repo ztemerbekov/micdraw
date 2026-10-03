@@ -1,0 +1,54 @@
+name: Check published package
+
+# Installs micdraw from npm and runs its CLI on Linux, macOS and Windows.
+# CI tests the repository; this checks the package people install, which a
+# missing file or a dependency that fails to install on one system would
+# break.
+on:
+  # The release workflow calls this after it publishes.
+  workflow_call:
+    inputs:
+      version:
+        description: The version to check, without the leading "v".
+        required: true
+        type: string
+  # A change to this check runs it against the version npm serves as latest.
+  pull_request:
+    paths:
+      - .github/workflows/check-published-package.yml
+
+permissions:
+  contents: read
+
+jobs:
+  npx:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      VERSION: ${{ inputs.version || 'latest' }}
+    steps:
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      # npm takes a minute or so to serve a version it has just accepted.
+      - name: Wait until npm serves the version
+        shell: bash
+        run: |
+          for attempt in $(seq 1 40); do
+            if npm view "micdraw@$VERSION" version --prefer-online >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::npm does not serve micdraw@$VERSION after 10 minutes."
+          exit 1
+      # No checkout: npx must install the package from npm, not use the repo.
+      - name: Run the CLI from npm
+        shell: bash
+        run: |
+          output=$(npx --yes "micdraw@$VERSION" --help)
+          echo "$output"
+          grep -q "Usage:" <<< "$output"

@@ -15,6 +15,8 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -22,13 +24,23 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
       - name: Check that the tag matches package.json
+        id: tag
         run: |
-          expected="v$(node -p 'require("./package.json").version')"
-          if [ "$GITHUB_REF_NAME" != "$expected" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match package.json ($expected)."
+          version="$(node -p 'require("./package.json").version')"
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json (v$version)."
             exit 1
           fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
       - run: npm publish
+
+  # Installs the version just published from npm and runs it on Linux, macOS
+  # and Windows.
+  check:
+    needs: publish
+    uses: ./.github/workflows/check-published-package.yml
+    with:
+      version: ${{ needs.publish.outputs.version }}
