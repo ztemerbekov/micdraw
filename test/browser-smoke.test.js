@@ -14,7 +14,11 @@ import {
   waitForChromeTab,
   waitForRenderedText,
 } from "../scripts/lib/chrome-cdp.js";
+import { FAKE_MICROPHONE_ARGS, startPresoAndListen } from "../scripts/lib/simulator-page.js";
 import { startServer } from "../src/server.js";
+import { createSettingsStore } from "../src/settings-store.js";
+import { startTestServer } from "./helpers/server.js";
+import { tempDir } from "./helpers/tmp.js";
 
 const CHROME_BIN = process.env.CHROME_BIN ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
@@ -72,4 +76,32 @@ test("browser renders the app shell", async (t) => {
     })`,
   );
   assert.equal(webSocketState, "open");
+});
+
+test("the simulator's page steps reach Preso and start listening", async (t) => {
+  if (!existsSync(CHROME_BIN)) {
+    t.skip("Chrome is not installed. Set CHROME_BIN to enable this smoke test.");
+    return;
+  }
+
+  // Start Preso saves the agent instructions first, so the page needs a settings store.
+  const settingsStore = createSettingsStore({ filePath: path.join(tempDir(t), "settings.json"), env: {}, readCodexAuth: () => null });
+  const { url } = await startTestServer(t, { settingsStore });
+
+  const userDataDir = await mkdtemp(path.join(tmpdir(), "micdraw-chrome-"));
+  const debugPort = await getAvailablePort();
+  const chrome = launchChrome(CHROME_BIN, { debugPort, userDataDir, url, extraArgs: FAKE_MICROPHONE_ARGS });
+
+  t.after(async () => {
+    await stopChrome(chrome);
+    await rm(userDataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  });
+
+  const tab = await waitForChromeTab(debugPort, url, chrome);
+  const cdp = await CdpClient.connect(tab.webSocketDebuggerUrl);
+  t.after(() => cdp.close());
+
+  await startPresoAndListen(cdp);
+
+  assert.equal(await evaluateInPage(cdp, `document.querySelector(".record-toggle").classList.contains("recording")`), true);
 });

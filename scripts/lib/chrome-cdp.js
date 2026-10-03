@@ -95,8 +95,8 @@ export async function waitForChromeTab(debugPort, url, chrome = undefined) {
 }
 
 /** Resolves with the page's text once it contains `expectedText`. */
-export async function waitForRenderedText(cdp, expectedText) {
-  const deadline = Date.now() + CHROME_WAIT_MS;
+export async function waitForRenderedText(cdp, expectedText, timeoutMs = CHROME_WAIT_MS) {
+  const deadline = Date.now() + timeoutMs;
   let lastText = "";
   while (Date.now() < deadline) {
     lastText = (await evaluateInPage(cdp, "document.body.innerText")) ?? "";

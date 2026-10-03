@@ -16,11 +16,12 @@ import {
   launchChrome,
   stopChrome,
   waitForChromeTab,
-  waitForRenderedText,
 } from "./lib/chrome-cdp.js";
 import { resolveSimulatorAgentProvider } from "./lib/simulator-agent-provider.js";
 import { parseSimulatorArgs } from "./lib/simulator-options.js";
+import { FAKE_MICROPHONE_ARGS, startPresoAndListen } from "./lib/simulator-page.js";
 import { startServer, whiteboardSystemPrompt } from "../src/server.js";
+import { createSettingsStore } from "../src/settings-store.js";
 import { chunkTranscriptAtPunctuation } from "./lib/transcript-chunker.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -83,6 +84,9 @@ export async function runSimulation(options, agentProvider) {
       port: options.port,
       moonshineModel: "medium",
       agentProvider,
+      // Start Preso saves the agent instructions first, so the page needs a
+      // store. A throwaway one keeps the simulator off ~/.config/micdraw.
+      settingsStore: createSettingsStore({ filePath: path.join(outDir, "settings.json"), env: {}, readCodexAuth: () => null }),
       agentTimeoutMs: options.agentTimeoutMs,
       onAgentEvent: (event) => record(event),
       createTranscription: () => ({
@@ -101,21 +105,14 @@ export async function runSimulation(options, agentProvider) {
       debugPort: chromeDebugPort,
       userDataDir: chromeUserDataDir,
       url: server.url,
-      extraArgs: [
-        "--use-fake-ui-for-media-stream",
-        "--use-fake-device-for-media-stream",
-        "--autoplay-policy=no-user-gesture-required",
-        "--window-size=1440,1000",
-      ],
+      extraArgs: [...FAKE_MICROPHONE_ARGS, "--window-size=1440,1000"],
     });
     const tab = await waitForChromeTab(chromeDebugPort, server.url, chrome);
     cdp = await CdpClient.connect(tab.webSocketDebuggerUrl);
     await cdp.request("Page.enable");
     await cdp.request("Runtime.enable");
     await cdp.request("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
-    await waitForRenderedText(cdp, "Start listening");
-    await evaluateInPage(cdp, `document.querySelector(".record-toggle").click()`);
-    await waitForRenderedText(cdp, "Connected");
+    await startPresoAndListen(cdp);
     scheduleScreenshot("initial");
 
     observer = await connectObserver(server.url, (message) => {
