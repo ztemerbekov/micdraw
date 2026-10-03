@@ -11,6 +11,7 @@
 - OpenAI Realtime and Deepgram transcribe in 16 languages, chosen in the Voice panel, and Deepgram adds Mixed languages for talks that switch between them. From the vendors' docs, not verified live.
 - The agent's debug and cache logs roll over to `<name>.1` past 10 MB, and the test suite no longer writes into `~/.config/micdraw/logs`.
 - Session cost counts every step of an agent turn, not just the last one, and no longer bills reasoning tokens twice.
+- The page no longer sends the agent's own board back as a user drawing, so the agent keeps its compact elements instead of Excalidraw's expanded ones.
 - The default agent model is now GPT-6 Luna (`gpt-6-luna`; Codex: `gpt-6-luna-fast`), and the settings menus offer the GPT-6 models. GPT-5.5 leaves Codex on 2026-10-14: a saved Codex model that Codex no longer serves switches to GPT-6 Luna on start.
 - An agent turn now ends as soon as an edit lands without warnings, instead of asking the model for a closing "DONE". That request took 1.5-3.3 s per turn while the next phrase waited.
 

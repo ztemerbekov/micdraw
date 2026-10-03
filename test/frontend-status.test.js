@@ -128,3 +128,16 @@ test("frontend lets the speaker pick a language for every transcription provider
     assert.ok(appSource.includes(label), `missing language label ${label}`);
   }
 });
+
+test("frontend pushes the live board only after the user touched the canvas", () => {
+  const appSource = readFileSync(path.join(rootDir, "public", "app.js"), "utf8");
+  // A pointer press on the canvas marks a user edit...
+  assert.match(appSource, /onPointerDown: \(\) => \{\s*userTouchedCanvasRef\.current = true;\s*\}/);
+  // ...and only then does a canvas change go to the server, so the page never
+  // echoes the agent's own board back in Excalidraw's expanded form (#41).
+  const handler = appSource.match(/function handleExcalidrawChange\(elements\) \{[\s\S]*?\n  \}\n/)?.[0] ?? "";
+  assert.match(handler, /if \(!userTouchedCanvasRef\.current\) return;/);
+  // The mark is spent by the push it allowed, and cleared when the page draws the agent's board.
+  assert.match(handler, /userTouchedCanvasRef\.current = false;\s*ws\.send\(/);
+  assert.match(appSource, /function applyScene\(elements, \{ recenter = false \} = \{\}\) \{[\s\S]*?userTouchedCanvasRef\.current = false;/);
+});
