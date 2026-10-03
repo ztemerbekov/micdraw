@@ -4,9 +4,10 @@
 // first model that runs on the platform is the default for its language.
 // Changing a sherpa model means updating its revision, sizes and SHA-256 together.
 // Reviewed 2026-10-03 (#28): no newer English Moonshine than medium and no
-// newer Kroko or Vosk builds, so the defaults stay. Other candidates wait for
-// a measurement: T-One for Russian (#15), NVIDIA Nemotron for English (#49).
-export const SUPPORTED_LANGUAGES = Object.freeze(["en", "ru"]);
+// newer Kroko or Vosk builds, so the defaults stay. German, French, Spanish and
+// Mandarin were measured on 40 FLEURS clips each (#13): WER 4.3%, 7.7% and 3.5%,
+// and 11.7% by character for Mandarin.
+export const SUPPORTED_LANGUAGES = Object.freeze(["en", "ru", "de", "fr", "es", "zh"]);
 
 const ALL_PLATFORMS = ["darwin", "linux", "win32"];
 
@@ -42,6 +43,68 @@ export const LOCAL_MODELS = Object.freeze([
       decoder: { name: "decoder.onnx", size: 2093080, sha256: "89b3088a9e20e1ef7f2e85ce1a3478afe6a9c4ac57369cabcc4beb8e95328ea0" },
       joiner: { name: "joiner.int8.onnx", size: 259417, sha256: "b55784b071ab7512eab4c7c44e4f5478284ef33c83562cc6a249b972515a31e5" },
       tokens: { name: "tokens.txt", size: 6388, sha256: "93bbbc0bae6b78c0bbb743d4aa9fded3bb5ff3aac5f0200e3a769a5a05e0fdf6" },
+    },
+  },
+  {
+    id: "kroko-de-2025-08-06",
+    engine: "sherpa",
+    language: "de",
+    label: "Kroko (sherpa-onnx)",
+    license: "CC-BY-SA",
+    source: "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-de-kroko-2025-08-06",
+    revision: "887db3d083240198c2d2b99fb66cfcfe6948ced8",
+    files: {
+      encoder: { name: "encoder.onnx", size: 70091557, sha256: "6e83993d6967ec7a3498b055b7e85ace85b5d64d1b1e8773cb29a43a11f5edb5" },
+      decoder: { name: "decoder.onnx", size: 617489, sha256: "94a29592b403c53fa2231b478637da1ab4abcef7f5e46e432098416a4a3ed562" },
+      joiner: { name: "joiner.onnx", size: 336817, sha256: "28356bff070aea51ab1d725a3278e81d19f9300f860d3248a7014292264df15a" },
+      tokens: { name: "tokens.txt", size: 5606, sha256: "86e8370994ff2c01149ba8c4f8709aa93cdc18914b27a717e291e96faf39a6eb" },
+    },
+  },
+  {
+    id: "kroko-fr-2025-08-06",
+    engine: "sherpa",
+    language: "fr",
+    label: "Kroko (sherpa-onnx)",
+    license: "CC-BY-SA",
+    source: "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-fr-kroko-2025-08-06",
+    revision: "08b84b7b7cf519be9817e9c16919d96a7a8bad91",
+    files: {
+      encoder: { name: "encoder.onnx", size: 70092599, sha256: "e02facae1daf6f1f13da67ea3ace7c722516d0868d1768d78c0580bc22cc0c5b" },
+      decoder: { name: "decoder.onnx", size: 617488, sha256: "6aed547570e3ab5afc05429a017cedd3a056c16df3baa5703f02461cefa25bac" },
+      joiner: { name: "joiner.onnx", size: 336817, sha256: "a51eec759bcdcaae2614686fa2a8b57417b2d420dd55a5a5558b388d35a9b2b6" },
+      tokens: { name: "tokens.txt", size: 5415, sha256: "fedfb9c844bfb2bf14171f8184863e3d617b815a8667bdd9fc9a3149fde73298" },
+    },
+  },
+  {
+    id: "kroko-es-2025-08-06",
+    engine: "sherpa",
+    language: "es",
+    label: "Kroko (sherpa-onnx)",
+    license: "CC-BY-SA",
+    source: "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-es-kroko-2025-08-06",
+    revision: "20cf7a4921613397841d31168796cade5b866585",
+    files: {
+      encoder: { name: "encoder.onnx", size: 154878102, sha256: "2d9f5ef87d1a5257f8a6687e21501c56f3aa2fcbfcfab9364dcc4ce4e06ae81b" },
+      decoder: { name: "decoder.onnx", size: 617488, sha256: "d4ce176b94b25f7acc88717bc3f704fcf5d6e131aaac2e0cabab3885541181ee" },
+      joiner: { name: "joiner.onnx", size: 336817, sha256: "dae35df88d676e320fcdb99217328e66dcf722bf11b0f2459e14ddb5b982ded5" },
+      tokens: { name: "tokens.txt", size: 6385, sha256: "1be5e0a58e05d06d327df4c6b7b5e4f8aba01da6981eb016fcaceafc6a56680f" },
+    },
+  },
+  {
+    // A CTC model: one model file instead of encoder, decoder and joiner. Its
+    // checkpoint, csukuangfj/icefall-streaming-zipformer-small-ctc-zh-2025-04-01,
+    // is Apache-2.0; the larger 2025-06-30 model was passed over because its
+    // original weights are gated (#13).
+    id: "zipformer-ctc-small-zh-2025-04-01",
+    engine: "sherpa",
+    language: "zh",
+    label: "Zipformer small CTC (sherpa-onnx)",
+    license: "Apache-2.0",
+    source: "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-small-ctc-zh-int8-2025-04-01",
+    revision: "a5f60fe00dcfbaf68fcc1c6b5cf53061e144d6da",
+    files: {
+      model: { name: "model.int8.onnx", size: 26342340, sha256: "68c9c943840f7d9cf3e8a4970ba50f404feb5277f611fa82b7e72267786fa84a" },
+      tokens: { name: "tokens.txt", size: 13366, sha256: "6fed8c6c248516f38e7faa19404b57413e8ce259f1cbc1fa4aebc86eac32fdfd" },
     },
   },
 ]);

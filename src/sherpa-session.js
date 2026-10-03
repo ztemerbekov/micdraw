@@ -1,3 +1,20 @@
+// The recognizer config for a model's downloaded files: a transducer has an
+// encoder, a decoder and a joiner; a CTC model has a single model file.
+export function sherpaRecognizerConfig(files, endpointSilenceSeconds) {
+  const model = files.model
+    ? { zipformer2Ctc: { model: files.model } }
+    : { transducer: { encoder: files.encoder, decoder: files.decoder, joiner: files.joiner } };
+  return {
+    featConfig: { sampleRate: 16000, featureDim: 80 },
+    modelConfig: { ...model, tokens: files.tokens, numThreads: 2, provider: "cpu", debug: 0 },
+    decodingMethod: "greedy_search",
+    enableEndpoint: true,
+    rule1MinTrailingSilence: 2.4,
+    rule2MinTrailingSilence: endpointSilenceSeconds,
+    rule3MinUtteranceLength: 30,
+  };
+}
+
 // One continuous sherpa-onnx streaming session: feeds audio, reports the text
 // as it grows, and commits a phrase when sherpa's endpoint detector fires.
 export function createSherpaSession(recognizer, { onPartial, onCommitted }) {
