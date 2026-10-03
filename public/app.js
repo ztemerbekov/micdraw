@@ -18,7 +18,7 @@ const OPENAI_TRANSCRIPTION_MODELS = [
   "gpt-4o-mini-transcribe",
   "whisper-1",
 ];
-const MOONSHINE_MODELS = ["tiny", "small", "medium"];
+const LANGUAGE_LABELS = { en: "English", ru: "Русский" };
 const DEEPGRAM_TRANSCRIPTION_MODELS = ["nova-3", "nova-2"];
 // Free-text, not a dropdown: OpenRouter's catalogue changes weekly and a fixed
 // list here would be wrong within the month.
@@ -80,6 +80,8 @@ function App() {
   const [transcriptionEngine, setTranscriptionEngine] =
     React.useState("loading");
   const [settings, setSettings] = React.useState(null);
+  const [localModels, setLocalModels] = React.useState([]);
+  const [languages, setLanguages] = React.useState(["en"]);
   const [captionText, setCaptionText] = React.useState("");
   const [error, setError] = React.useState("");
   const [micError, setMicError] = React.useState(false);
@@ -319,6 +321,8 @@ function App() {
       .then((config) => {
         setTranscriptionEngine(config.transcriptionEngine);
         if (config.settings) setSettings(config.settings);
+        setLocalModels(config.localModels ?? []);
+        setLanguages(config.languages ?? ["en"]);
       })
       .catch((err) => setError(err.message));
   }, []);
@@ -664,7 +668,9 @@ function App() {
       : "idle";
   const sttState = sttError ? "error" : listening ? "active" : "idle";
   const agentLabel = settings ? agentModelLabel(settings) : "loading...";
-  const sttLabel = settings ? sttModelLabel(settings) : transcriptionEngine;
+  const sttLabel = settings
+    ? sttModelLabel(settings, transcriptionEngine)
+    : transcriptionEngine;
   const micLabel = mic.label || "System default";
 
   return React.createElement(
@@ -913,6 +919,8 @@ function App() {
           editor: settings
             ? React.createElement(TranscriptionEditor, {
                 settings,
+                localModels,
+                languages,
                 onSave: async (patch) => {
                   await saveSettings(patch);
                   setExpandedRow(null);
@@ -1257,7 +1265,10 @@ function agentModelLabel(settings) {
   return settings.agent.openai.model;
 }
 
-function sttModelLabel(settings) {
+// The server resolves a local model by language and platform, so its label
+// (the transcription engine it reports) is the one to show.
+function sttModelLabel(settings, engineLabel) {
+  if (settings.transcription.provider === "local") return engineLabel;
   if (settings.transcription.provider === "moonshine")
     return settings.transcription.moonshine.model;
   if (settings.transcription.provider === "deepgram")
@@ -1592,13 +1603,43 @@ function AgentEditor({ settings, onSave, onCancel }) {
   );
 }
 
-function TranscriptionEditor({ settings, onSave, onCancel }) {
+function TranscriptionEditor({
+  settings,
+  localModels,
+  languages,
+  onSave,
+  onCancel,
+}) {
+  // Older settings files say "moonshine"; the editor shows that as Local.
+  const legacyMoonshine = settings.transcription.provider === "moonshine";
   const [provider, setProvider] = React.useState(
-    settings.transcription.provider,
+    legacyMoonshine ? "local" : settings.transcription.provider,
   );
-  const [moonshineModel, setMoonshineModel] = React.useState(
-    settings.transcription.moonshine.model,
+  const [language, setLanguage] = React.useState(
+    settings.transcription.language ?? "en",
   );
+  // The saved pick for a language if this platform offers it, else its default.
+  const savedLocalModel = (lang) => {
+    const ids = localModels
+      .filter((model) => model.language === lang)
+      .map((model) => model.id);
+    const saved =
+      settings.transcription.local?.models?.[lang] ??
+      (legacyMoonshine && lang === "en"
+        ? `moonshine-${settings.transcription.moonshine?.model}`
+        : undefined);
+    return ids.includes(saved) ? saved : (ids[0] ?? "");
+  };
+  const [localModelId, setLocalModelId] = React.useState(() =>
+    savedLocalModel(settings.transcription.language ?? "en"),
+  );
+  const languageModels = localModels.filter(
+    (model) => model.language === language,
+  );
+  function chooseLanguage(next) {
+    setLanguage(next);
+    setLocalModelId(savedLocalModel(next));
+  }
   const [openaiModel, setOpenaiModel] = React.useState(
     settings.transcription.openai.model,
   );
@@ -1622,10 +1663,16 @@ function TranscriptionEditor({ settings, onSave, onCancel }) {
     setBusy(true);
     setErrorText("");
     const patch = {
-      transcription: { provider, moonshine: {}, openai: {}, deepgram: {} },
+      transcription: { provider, openai: {}, deepgram: {} },
     };
-    if (provider === "moonshine")
-      patch.transcription.moonshine.model = moonshineModel;
+    if (provider === "local") {
+      Object.assign(patch.transcription, {
+        language,
+        ...(localModelId
+          ? { local: { models: { [language]: localModelId } } }
+          : {}),
+      });
+    }
     if (provider === "openai") patch.transcription.openai.model = openaiModel;
     if (provider === "deepgram") {
       patch.transcription.deepgram.model = deepgramModel;
@@ -1660,8 +1707,8 @@ function TranscriptionEditor({ settings, onSave, onCancel }) {
         },
         React.createElement(
           "option",
-          { value: "moonshine" },
-          "Moonshine (local)",
+          { value: "local" },
+          "Local (this computer)",
         ),
         React.createElement("option", { value: "openai" }, "OpenAI Realtime"),
         React.createElement("option", { value: "deepgram" }, "Deepgram"),
@@ -1704,10 +1751,32 @@ function TranscriptionEditor({ settings, onSave, onCancel }) {
           }),
         )
       : null,
-    provider === "moonshine"
+    provider === "local"
+      ? field(
+          "Language",
+          labeledSelect(
+            language,
+            chooseLanguage,
+            languages.map((code) => ({
+              value: code,
+              label: LANGUAGE_LABELS[code] ?? code,
+            })),
+            busy,
+          ),
+        )
+      : null,
+    provider === "local"
       ? field(
           "Model",
-          select(moonshineModel, setMoonshineModel, MOONSHINE_MODELS, busy),
+          labeledSelect(
+            localModelId,
+            setLocalModelId,
+            languageModels.map((model) => ({
+              value: model.id,
+              label: localModelLabel(model),
+            })),
+            busy,
+          ),
         )
       : null,
     provider === "openai"
@@ -1775,6 +1844,26 @@ function field(label, control) {
     React.createElement("span", { className: "field-label" }, label),
     control,
   );
+}
+
+function labeledSelect(value, onChange, options, disabled) {
+  return React.createElement(
+    "select",
+    { value, onChange: (e) => onChange(e.target.value), disabled },
+    options.map((option) =>
+      React.createElement(
+        "option",
+        { key: option.value, value: option.value },
+        option.label,
+      ),
+    ),
+  );
+}
+
+// sherpa-onnx models download on first use, so their size is worth showing.
+function localModelLabel(model) {
+  if (!model.downloadBytes) return model.label;
+  return `${model.label} · ${Math.round(model.downloadBytes / 1_000_000)} MB`;
 }
 
 function select(value, onChange, options, disabled) {
