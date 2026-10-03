@@ -36,3 +36,32 @@ test("agent debug and cache logs create nested log directories", async (t) => {
   assert.equal(debugRecord.label, "turn");
   assert.equal(debugRecord.systemLength, 6);
 });
+
+test("while tests run, agent logs stay out of the user's ~/.config/micdraw/logs", async (t) => {
+  const previous = { cache: process.env.MICDRAW_CACHE_LOG, debug: process.env.MICDRAW_DEBUG_LOG };
+  delete process.env.MICDRAW_CACHE_LOG;
+  delete process.env.MICDRAW_DEBUG_LOG;
+  t.after(() => {
+    if (previous.cache !== undefined) process.env.MICDRAW_CACHE_LOG = previous.cache;
+    if (previous.debug !== undefined) process.env.MICDRAW_DEBUG_LOG = previous.debug;
+  });
+
+  const { agentLogPaths } = await import(`../src/server.js?test-log-dir=${Date.now()}`);
+  for (const file of Object.values(agentLogPaths())) {
+    assert.ok(file.startsWith(os.tmpdir()), file);
+    assert.ok(!file.startsWith(path.join(os.homedir(), ".config", "micdraw")), file);
+  }
+});
+
+test("an agent log over its size cap rolls over to .1 and starts fresh", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "micdraw-logs-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const file = path.join(tmp, "debug.log");
+  const { appendToLog } = await import("../src/server.js");
+
+  appendToLog(file, "old line one\nold line two\n", { maxBytes: 10 });
+  appendToLog(file, "new line\n", { maxBytes: 10 });
+
+  assert.equal(readFileSync(`${file}.1`, "utf8"), "old line one\nold line two\n");
+  assert.equal(readFileSync(file, "utf8"), "new line\n");
+});
