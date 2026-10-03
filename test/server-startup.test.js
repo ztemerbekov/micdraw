@@ -288,6 +288,47 @@ test("whiteboard_apply with operations only edits the canvas without touching vi
   assert.equal(broadcasts.filter((m) => m.type === "whiteboard:viewport").length, 0);
 });
 
+test("whiteboard_apply grows a shape too small for its label instead of warning the agent", async () => {
+  const broadcasts = [];
+  const state = { elements: [], agentHistory: [] };
+  let result;
+
+  await runWhiteboardAgent({
+    transcript: "Add the replay step",
+    state,
+    wss: {
+      clients: new Set([
+        { readyState: WebSocket.OPEN, send: (msg) => broadcasts.push(JSON.parse(msg)) },
+      ]),
+    },
+    options: {},
+    generateTextFn: async ({ tools }) => {
+      result = await tools.whiteboard_apply.execute({
+        operations: [
+          {
+            type: "insert_after",
+            line: 0,
+            element: {
+              type: "rectangle",
+              id: "replay",
+              x: 100,
+              y: 100,
+              width: 249,
+              height: 110,
+              label: { text: "Replay real turns on each model", fontSize: 18 },
+            },
+          },
+        ],
+      });
+    },
+  });
+
+  assert.doesNotMatch(result, /WARNING/);
+  assert.match(result, /"id":"replay","x":33,"y":100,"width":383,"height":110/);
+  assert.equal(state.elements[0].width, 383);
+  assert.deepEqual(broadcasts, [{ type: "whiteboard:update", elements: state.elements }]);
+});
+
 test("whiteboard_apply with viewport only moves the camera without editing", async () => {
   const broadcasts = [];
   const state = {
