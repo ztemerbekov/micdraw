@@ -1,0 +1,44 @@
+name: Moonshine sidecars
+
+# Builds the macOS Moonshine sidecar binaries for arm64 and x64. The build
+# script smoke-tests each binary: it must load the medium English model and
+# report that it is ready. Nothing is published yet: the @micdraw packages
+# need their first publish and npm trust first (#55).
+on:
+  pull_request:
+    paths:
+      - .github/workflows/moonshine-sidecars.yml
+      - moonshine-sidecar.config.json
+      - scripts/moonshine-sidecar.py
+      - scripts/build-moonshine-sidecars.js
+      - packages/moonshine-darwin-*/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    # Apple Silicon. The x64 binary is built and smoke-tested under Rosetta.
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      # The same version as pythonVersion in moonshine-sidecar.config.json.
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - run: npm run build:moonshine-sidecars
+      - name: Show what was built
+        run: |
+          for binary in packages/moonshine-darwin-*/bin/micdraw-moonshine; do
+            file "$binary"
+            ls -lh "$binary"
+          done
+      - uses: actions/upload-artifact@v7
+        with:
+          name: moonshine-sidecars
+          path: packages/moonshine-darwin-*/bin/micdraw-moonshine
+          retention-days: 7
