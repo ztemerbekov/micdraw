@@ -116,6 +116,8 @@ function App() {
   const shellRef = React.useRef(null);
   const userElementsSyncTimerRef = React.useRef(null);
   const lastSyncedElementsHashRef = React.useRef("");
+  // The agent's last board, by element id, to tell what a preview changed.
+  const agentBoardRef = React.useRef(new Map());
   const listeningRef = React.useRef(false);
   // Seed the textarea once from settings, then let the user own it locally so
   // their keystrokes don't fight the WS settings broadcast we trigger on save.
@@ -268,11 +270,17 @@ function App() {
         }
       }
       if (message.type === "whiteboard:update") {
-        // Recenter when the live canvas resets to a fresh starter (Start preso, Reset session).
-        const isFreshStarter =
-          Array.isArray(message.elements) &&
-          message.elements.length <= STARTER_ELEMENTS.length + 1;
-        applyScene(message.elements, { recenter: isFreshStarter });
+        const changed = rememberAgentBoard(message.elements);
+        if (message.preview) {
+          applyScene(message.elements);
+          followPreview(changed);
+        } else {
+          // Recenter when the live canvas resets to a fresh starter (Start preso, Reset session).
+          const isFreshStarter =
+            Array.isArray(message.elements) &&
+            message.elements.length <= STARTER_ELEMENTS.length + 1;
+          applyScene(message.elements, { recenter: isFreshStarter });
+        }
       }
       if (message.type === "whiteboard:viewport")
         applyWhiteboardViewportCommand(message);
@@ -567,6 +575,44 @@ function App() {
       );
     }
     scheduleWhiteboardScreenshot();
+  }
+
+  // Returns the ids of elements that are new or different since the agent's
+  // last board, and remembers this one.
+  function rememberAgentBoard(elements) {
+    const next = new Map(
+      (Array.isArray(elements) ? elements : []).map((el) => [el?.id, JSON.stringify(el)]),
+    );
+    const previous = agentBoardRef.current;
+    agentBoardRef.current = next;
+    return [...next].filter(([id, json]) => previous.get(id) !== json).map(([id]) => id);
+  }
+
+  // While the agent is still writing an edit, keep the elements it just drew
+  // in view. Its own viewport command arrives with the finished edit.
+  function followPreview(changedIds) {
+    const excalidrawAPI = apiRef.current;
+    if (!excalidrawAPI || changedIds.length === 0) return;
+    requestAnimationFrame(() => {
+      const ids = new Set(changedIds);
+      const targets = excalidrawAPI
+        .getSceneElements()
+        .filter((el) => ids.has(el.id) || ids.has(el.containerId));
+      if (targets.length === 0) return;
+      const { scrollX, scrollY, zoom, width, height } = excalidrawAPI.getAppState();
+      const left = -scrollX;
+      const top = -scrollY;
+      const right = left + width / zoom.value;
+      const bottom = top + height / zoom.value;
+      const inView = targets.every(
+        (el) =>
+          el.x >= left &&
+          el.y >= top &&
+          el.x + el.width <= right &&
+          el.y + el.height <= bottom,
+      );
+      if (!inView) excalidrawAPI.scrollToContent(targets, { animate: true });
+    });
   }
 
   function applyWhiteboardViewportCommand(command) {
