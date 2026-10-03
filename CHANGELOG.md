@@ -6,6 +6,7 @@
 - Losing the connection to the server turns the microphone off. Before, audio kept streaming into the closed connection while the page showed listening as stopped.
 - A drawing made on the staging canvas right after the page loads is no longer wiped by a delayed refresh.
 - The canvas no longer re-renders on every caption, cost and status update, each live screenshot is encoded once instead of twice, and the page loads Excalidraw's minified stylesheet.
+- xAI, OpenRouter and Ollama models think as little as they allow: Mic Draw asks the provider which reasoning efforts the model accepts and sends the lowest, `none` on `grok-4.3` and `low` on `grok-4.5` and later, which otherwise default to `high`. Suggested by Julien Talbot, who measured ~6.1 s per turn against ~1.7 s on `grok-4.3`; not verified live in Mic Draw (#78).
 
 ## 0.2.2 (2026-10-03)
 

@@ -394,6 +394,94 @@ test("runWhiteboardAgent passes OpenAI reasoning effort provider option", async 
   });
 });
 
+async function agentProviderOptionsFor(agentProvider) {
+  let seen;
+  await runWhiteboardAgent({
+    transcript: "hello",
+    state: { elements: [], agentHistory: [] },
+    wss: { clients: new Set() },
+    options: { agentProvider },
+    generateTextFn: async ({ providerOptions }) => {
+      seen = providerOptions;
+    },
+  });
+  return seen;
+}
+
+test("runWhiteboardAgent passes the looked-up reasoning effort to xAI and Ollama", async () => {
+  const xai = { provider: "xai", model: "grok-4.3", baseURL: "https://api.x.ai/v1", apiKey: "xai-key" };
+  const ollama = { provider: "ollama", model: "qwen3.6", baseURL: "http://localhost:11434/v1", apiKey: "ollama" };
+
+  assert.deepEqual(await agentProviderOptionsFor({ ...xai, reasoningEffort: "none" }), { openai: { reasoningEffort: "none" } });
+  assert.deepEqual(await agentProviderOptionsFor({ ...ollama, reasoningEffort: "none" }), { openai: { reasoningEffort: "none" } });
+  assert.equal(await agentProviderOptionsFor(xai), undefined);
+});
+
+test("runWhiteboardAgent forces OpenRouter's reasoning effort through and keeps the system role", async () => {
+  const openrouter = { provider: "openrouter", model: "x-ai/grok-4.5", baseURL: "https://openrouter.ai/api/v1", apiKey: "or-key" };
+
+  // The AI SDK only sends `reasoning` on the Responses API for model ids it
+  // recognizes, and forcing it would otherwise turn the system message into a
+  // developer message.
+  assert.deepEqual(await agentProviderOptionsFor({ ...openrouter, reasoningEffort: "low" }), {
+    openai: { reasoningEffort: "low", forceReasoning: true, systemMessageMode: "system" },
+  });
+  assert.equal(await agentProviderOptionsFor(openrouter), undefined);
+});
+
+test("runWhiteboardAgent sends OpenRouter's reasoning effort on the wire", async () => {
+  const realFetch = globalThis.fetch;
+  let body;
+  globalThis.fetch = async (_url, init) => {
+    body = JSON.parse(init.body);
+    throw new Error("stop after the request");
+  };
+  try {
+    await runWhiteboardAgent({
+      transcript: "hello",
+      state: { elements: [], agentHistory: [] },
+      wss: { clients: new Set() },
+      options: {
+        agentProvider: { provider: "openrouter", model: "x-ai/grok-4.5", baseURL: "https://openrouter.ai/api/v1", apiKey: "or-key", reasoningEffort: "low" },
+      },
+    }).catch(() => {});
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+
+  assert.deepEqual(body.reasoning, { effort: "low" });
+  assert.equal(body.input[0].role, "system");
+});
+
+test("runWhiteboardAgent looks up the reasoning effort for a provider from settings", async () => {
+  const looked = [];
+  const settings = {
+    agent: { provider: "xai", xai: { model: "grok-4.3", baseURL: "https://api.x.ai/v1" } },
+    apiKeys: { xai: "xai-key" },
+  };
+  let seen;
+
+  await runWhiteboardAgent({
+    transcript: "hello",
+    state: { elements: [], agentHistory: [] },
+    wss: { clients: new Set() },
+    options: {
+      settingsStore: { load: async () => settings },
+      env: {},
+      reasoningEffortLookup: async (agentProvider) => {
+        looked.push(agentProvider.model);
+        return "none";
+      },
+    },
+    generateTextFn: async ({ providerOptions }) => {
+      seen = providerOptions;
+    },
+  });
+
+  assert.deepEqual(looked, ["grok-4.3"]);
+  assert.deepEqual(seen, { openai: { reasoningEffort: "none" } });
+});
+
 test("runWhiteboardAgent always uses the production system prompt", async () => {
   await runWhiteboardAgent({
     transcript: "hello",
