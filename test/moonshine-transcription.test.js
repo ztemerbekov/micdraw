@@ -1,6 +1,7 @@
 // @ts-nocheck - hand-rolled EventEmitter is used as a fake ChildProcess; structural types fight here.
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import path from "node:path";
 import { test } from "node:test";
 
 import {
@@ -28,7 +29,8 @@ test("resolveMoonshineSidecarPath resolves the binary inside the optional packag
     requireResolve: () => "/workspace/node_modules/@autopreso/moonshine-darwin-arm64/package.json",
   });
 
-  assert.equal(resolved, "/workspace/node_modules/@autopreso/moonshine-darwin-arm64/bin/autopreso-moonshine");
+  // Compared with the host's separators: on Windows path.join writes backslashes.
+  assert.equal(resolved, path.normalize("/workspace/node_modules/@autopreso/moonshine-darwin-arm64/bin/autopreso-moonshine"));
 });
 
 test("resolveMoonshineSidecarPath prefers an explicit binary override", () => {

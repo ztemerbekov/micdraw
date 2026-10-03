@@ -115,7 +115,7 @@ test("createSettingsStore.save rejects oversized agent instructions", async () =
   );
 });
 
-test("createSettingsStore.save writes the file with 0600 permissions", async () => {
+test("createSettingsStore.save writes the file with 0600 permissions", { skip: process.platform === "win32" && "Windows has no POSIX file modes" }, async () => {
   const filePath = await tempPath();
   const store = createSettingsStore({ filePath, env: {}, readCodexAuth: noCodexAuth });
   await store.load();
