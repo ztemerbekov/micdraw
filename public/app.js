@@ -14,12 +14,8 @@ const OPENAI_AGENT_MODELS = ["gpt-6-luna", "gpt-6-sol", "gpt-6.1-sol", "gpt-5.5"
 // "-fast" sends the request in Fast mode: quicker, but it uses more of the
 // ChatGPT plan.
 const CODEX_AGENT_MODELS = ["gpt-6-luna-fast", "gpt-6-luna", "gpt-6-sol-fast", "gpt-6-sol", "gpt-6.1-sol-fast", "gpt-6.1-sol"];
-const OPENAI_TRANSCRIPTION_MODELS = [
-  "gpt-realtime-whisper",
-  "gpt-4o-transcribe",
-  "gpt-4o-mini-transcribe",
-  "whisper-1",
-];
+// Models OpenAI serves for realtime transcription sessions (October 2026).
+const OPENAI_TRANSCRIPTION_MODELS = ["gpt-live-transcribe", "gpt-realtime-whisper"];
 const LANGUAGE_LABELS = { en: "English", ru: "Русский" };
 const DEEPGRAM_TRANSCRIPTION_MODELS = ["nova-3", "nova-2"];
 // Free-text, not a dropdown: OpenRouter's catalogue changes weekly and a fixed
@@ -1607,7 +1603,7 @@ function AgentEditor({ settings, onSave, onCancel }) {
             type: "text",
             value: ollamaModel,
             onChange: (e) => setOllamaModel(e.target.value),
-            placeholder: "e.g. llama3.2",
+            placeholder: "e.g. qwen3.6",
             disabled: busy,
           }),
         )

@@ -360,3 +360,24 @@ test("load keeps a Codex model that Codex still offers", async () => {
   assert.equal(settings.agent.codex.model, "gpt-6-sol");
   assert.equal(onDisk.agent.codex.model, "gpt-6-sol");
 });
+
+test("new installs transcribe through OpenAI's gpt-live-transcribe", async () => {
+  const store = createSettingsStore({ filePath: await tempPath(), env: {}, readCodexAuth: noCodexAuth });
+  const settings = await store.load();
+  assert.equal(settings.transcription.openai.model, "gpt-live-transcribe");
+});
+
+test("load moves an OpenAI transcription model that realtime sessions no longer serve", async () => {
+  const filePath = await tempPath();
+  await fs.writeFile(filePath, JSON.stringify({ transcription: { provider: "openai", openai: { model: "gpt-4o-transcribe" } } }));
+  const settings = await createSettingsStore({ filePath, env: {}, readCodexAuth: noCodexAuth }).load();
+  assert.equal(settings.transcription.openai.model, "gpt-live-transcribe");
+  assert.equal(JSON.parse(await fs.readFile(filePath, "utf8")).transcription.openai.model, "gpt-live-transcribe");
+});
+
+test("load keeps gpt-realtime-whisper, which realtime sessions still serve", async () => {
+  const filePath = await tempPath();
+  await fs.writeFile(filePath, JSON.stringify({ transcription: { provider: "openai", openai: { model: "gpt-realtime-whisper" } } }));
+  const settings = await createSettingsStore({ filePath, env: {}, readCodexAuth: noCodexAuth }).load();
+  assert.equal(settings.transcription.openai.model, "gpt-realtime-whisper");
+});

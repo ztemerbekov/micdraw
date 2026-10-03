@@ -25,6 +25,7 @@ export const AGENT_PRICING = {
 // Per minute of audio sent, USD.
 export const TRANSCRIPTION_PRICING = {
   openai: {
+    "gpt-live-transcribe":    0.017,
     "gpt-realtime-whisper":   0.017,
     "gpt-4o-transcribe":      0.006,
     "gpt-4o-mini-transcribe": 0.003,

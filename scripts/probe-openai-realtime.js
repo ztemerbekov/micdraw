@@ -57,7 +57,7 @@ async function probe(model) {
   return { queued, turnLatency };
 }
 
+await probe("gpt-live-transcribe");
 await probe("gpt-realtime-whisper");
-await probe("gpt-4o-mini-transcribe");
 console.log("\n--- done ---");
 process.exit(0);
