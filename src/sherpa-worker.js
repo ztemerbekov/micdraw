@@ -2,26 +2,12 @@
 // never stalls the server's WebSocket and HTTP handling.
 import { parentPort, workerData } from "node:worker_threads";
 
-import { createSherpaSession } from "./sherpa-session.js";
+import { createSherpaSession, sherpaRecognizerConfig } from "./sherpa-session.js";
 
 const { files, endpointSilenceSeconds } = workerData;
 const { default: sherpaOnnx } = await import("sherpa-onnx-node");
 
-const recognizer = new sherpaOnnx.OnlineRecognizer({
-  featConfig: { sampleRate: 16000, featureDim: 80 },
-  modelConfig: {
-    transducer: { encoder: files.encoder, decoder: files.decoder, joiner: files.joiner },
-    tokens: files.tokens,
-    numThreads: 2,
-    provider: "cpu",
-    debug: 0,
-  },
-  decodingMethod: "greedy_search",
-  enableEndpoint: true,
-  rule1MinTrailingSilence: 2.4,
-  rule2MinTrailingSilence: endpointSilenceSeconds,
-  rule3MinUtteranceLength: 30,
-});
+const recognizer = new sherpaOnnx.OnlineRecognizer(sherpaRecognizerConfig(files, endpointSilenceSeconds));
 
 const session = createSherpaSession(recognizer, {
   onPartial: (text) => parentPort.postMessage({ type: "transcript:partial", text }),

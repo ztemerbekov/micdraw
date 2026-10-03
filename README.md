@@ -134,8 +134,10 @@ Local transcription runs on your machine on macOS, Linux and Windows; see [Local
 | --- | --- | --- |
 | English | Moonshine medium | Kroko (sherpa-onnx) |
 | Russian | Vosk small (sherpa-onnx) | Vosk small (sherpa-onnx) |
+| German, French, Spanish | Kroko (sherpa-onnx) | Kroko (sherpa-onnx) |
+| Mandarin Chinese | Zipformer small CTC (sherpa-onnx) | Zipformer small CTC (sherpa-onnx) |
 
-On macOS you can also pick Moonshine small or tiny, or Kroko. Moonshine is the macOS default for English because it finishes a phrase about a second sooner at similar accuracy; the measurements are in [#3](https://github.com/ztemerbekov/micdraw/issues/3).
+On macOS you can also pick Moonshine small or tiny, or Kroko. Moonshine is the macOS default for English because it finishes a phrase about a second sooner at similar accuracy; the measurements are in [#3](https://github.com/ztemerbekov/micdraw/issues/3). On 40 FLEURS clips per language, the German, French and Spanish models got 4.3%, 7.7% and 3.5% of words wrong, and the Mandarin model 11.7% of characters ([#13](https://github.com/ztemerbekov/micdraw/issues/13)).
 
 sherpa-onnx models download once, on first use, from Hugging Face at a pinned commit, and every file is checked against its SHA-256 before it is used. They are stored in `~/.config/micdraw/models/`. The Voice row shows the download progress, and the previous model keeps transcribing until the new one is ready.
 
@@ -143,6 +145,10 @@ sherpa-onnx models download once, on first use, from Hugging Face at a pinned co
 | --- | --- | --- | --- |
 | Kroko English streaming zipformer | 71 MB | CC-BY-SA (Kroko community model) | [Banafo/Kroko-ASR](https://huggingface.co/Banafo/Kroko-ASR), packaged for sherpa-onnx as [csukuangfj/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06](https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06) |
 | Vosk small Russian streaming zipformer | 29 MB | Apache-2.0 | [alphacep/vosk-model-small-streaming-ru](https://huggingface.co/alphacep/vosk-model-small-streaming-ru), packaged for sherpa-onnx as [csukuangfj/sherpa-onnx-streaming-zipformer-small-ru-vosk-int8-2025-08-16](https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-small-ru-vosk-int8-2025-08-16) |
+| Kroko German streaming zipformer | 71 MB | CC-BY-SA (Kroko community model) | [Banafo/Kroko-ASR](https://huggingface.co/Banafo/Kroko-ASR), packaged for sherpa-onnx as [csukuangfj/sherpa-onnx-streaming-zipformer-de-kroko-2025-08-06](https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-de-kroko-2025-08-06) |
+| Kroko French streaming zipformer | 71 MB | CC-BY-SA (Kroko community model) | [Banafo/Kroko-ASR](https://huggingface.co/Banafo/Kroko-ASR), packaged for sherpa-onnx as [csukuangfj/sherpa-onnx-streaming-zipformer-fr-kroko-2025-08-06](https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-fr-kroko-2025-08-06) |
+| Kroko Spanish streaming zipformer | 156 MB | CC-BY-SA (Kroko community model) | [Banafo/Kroko-ASR](https://huggingface.co/Banafo/Kroko-ASR), packaged for sherpa-onnx as [csukuangfj/sherpa-onnx-streaming-zipformer-es-kroko-2025-08-06](https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-es-kroko-2025-08-06) |
+| Zipformer small CTC Mandarin, int8 | 26 MB | Apache-2.0 | [csukuangfj/icefall-streaming-zipformer-small-ctc-zh-2025-04-01](https://huggingface.co/csukuangfj/icefall-streaming-zipformer-small-ctc-zh-2025-04-01), packaged for sherpa-onnx as [csukuangfj/sherpa-onnx-streaming-zipformer-small-ctc-zh-int8-2025-04-01](https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-small-ctc-zh-int8-2025-04-01) |
 
 Moonshine runs as a native sidecar on `darwin-arm64` and `darwin-x64`. For now these are the sidecar builds published by autopreso (`@autopreso/moonshine-darwin-*`).
 
@@ -227,7 +233,7 @@ Two deliberate differences from the OpenAI provider:
 - [Excalidraw](https://github.com/excalidraw/excalidraw) - the whiteboard canvas, scene model, and rendering.
 - [Moonshine](https://github.com/moonshine-ai/moonshine) - local English speech-to-text on macOS.
 - [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) - the streaming speech-to-text runtime for the other local models.
-- [Kroko](https://huggingface.co/Banafo/Kroko-ASR) and [Vosk](https://alphacephei.com/vosk/) - the English and Russian streaming models.
+- [Kroko](https://huggingface.co/Banafo/Kroko-ASR), [Vosk](https://alphacephei.com/vosk/) and [icefall](https://github.com/k2-fsa/icefall) - the streaming models: Kroko for English, German, French and Spanish, Vosk for Russian, an icefall Zipformer for Mandarin.
 - [Vercel AI SDK](https://github.com/vercel/ai) - tool-calling agent loop and provider abstraction.
 
 ## Development

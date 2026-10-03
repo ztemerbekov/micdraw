@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { createSherpaSession } from "../src/sherpa-session.js";
+import { createSherpaSession, sherpaRecognizerConfig } from "../src/sherpa-session.js";
 
 // Each acceptWaveform call advances one scripted step: the text sherpa would
 // report after that chunk and whether its endpoint detector fired.
@@ -81,4 +81,16 @@ test("stop commits the unfinished phrase and starts a fresh stream", () => {
   assert.deepEqual(sink.events.at(-1), ["committed", "half a sentence"]);
   assert.equal(recognizer.streams[0].finished, true);
   assert.equal(recognizer.streams.length, 2);
+});
+
+test("the recognizer config runs a transducer from its three files and a CTC model from one", () => {
+  const transducer = sherpaRecognizerConfig({ encoder: "e.onnx", decoder: "d.onnx", joiner: "j.onnx", tokens: "t.txt" }, 0.8);
+  assert.deepEqual(transducer.modelConfig.transducer, { encoder: "e.onnx", decoder: "d.onnx", joiner: "j.onnx" });
+  assert.equal(transducer.modelConfig.zipformer2Ctc, undefined);
+  assert.equal(transducer.rule2MinTrailingSilence, 0.8);
+
+  const ctc = sherpaRecognizerConfig({ model: "m.int8.onnx", tokens: "t.txt" }, 0.8);
+  assert.deepEqual(ctc.modelConfig.zipformer2Ctc, { model: "m.int8.onnx" });
+  assert.equal(ctc.modelConfig.transducer, undefined);
+  assert.equal(ctc.modelConfig.tokens, "t.txt");
 });
