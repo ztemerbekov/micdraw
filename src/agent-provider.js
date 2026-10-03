@@ -2,15 +2,14 @@ import { createOpenAI } from "@ai-sdk/openai";
 
 import { DEFAULT_CODEX_BASE_URL, createCodexFetch, readCodexCliAuthSync } from "./codex-auth.js";
 
-// GPT-6 Sol made none of the edit mistakes GPT-6 Luna made on replayed real
-// turns (deleted stages, duplicate ids) and was faster than GPT-5.5 there.
-// GPT-5.5 leaves Codex on 2026-10-14.
-const DEFAULT_OPENAI_AGENT_MODEL = "gpt-6-sol";
-const DEFAULT_CODEX_AGENT_MODEL = "gpt-6-sol";
+// The only OpenAI model Mic Draw offers; src/settings-store.js says why.
+const DEFAULT_OPENAI_AGENT_MODEL = "gpt-6.1-sol";
+const DEFAULT_CODEX_AGENT_MODEL = "gpt-6.1-sol";
 const DEFAULT_OPENAI_REASONING_EFFORT = "low";
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1";
-const OPENAI_REASONING_EFFORTS = new Set(["none", "low", "medium", "high", "xhigh"]);
+// What GPT-6.1 Sol takes; it rejects "none".
+const OPENAI_REASONING_EFFORTS = new Set(["low", "medium", "high", "xhigh", "max"]);
 
 // OpenRouter fronts many vendors behind an OpenAI-shaped API, including the
 // `/responses` endpoint this app's OpenAI path already speaks, so the whole
@@ -70,7 +69,7 @@ export function resolveAgentProviderFromSettings({ settings, env = process.env }
     const codexAuth = readCodexCliAuthSync(env);
     if (!codexAuth) throw new Error("Codex CLI auth not found. Run `codex` and sign in with ChatGPT.");
     // Fast mode is OpenAI's "priority" service tier. Older settings named it
-    // in the model ("gpt-6-luna-fast"); still read that.
+    // in the model ("gpt-6.1-sol-fast"); still read that.
     const requested = settings.agent.codex.model || DEFAULT_CODEX_AGENT_MODEL;
     const namedFast = requested.endsWith("-fast");
     const fast = namedFast || (settings.agent.codex.fast ?? true);
@@ -98,7 +97,7 @@ export function resolveAgentProviderFromSettings({ settings, env = process.env }
 function validateReasoningEffort(reasoningEffort) {
   const value = reasoningEffort || DEFAULT_OPENAI_REASONING_EFFORT;
   if (!OPENAI_REASONING_EFFORTS.has(value)) {
-    throw new Error(`Unsupported reasoning effort "${value}". Use none, low, medium, high, or xhigh.`);
+    throw new Error(`Unsupported reasoning effort "${value}". Use low, medium, high, xhigh, or max.`);
   }
   return value;
 }

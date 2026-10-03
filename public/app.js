@@ -9,10 +9,12 @@ import { createRoot } from "react-dom/client";
 import { STARTER_ELEMENTS } from "./starter-elements.js";
 
 const SAMPLE_RATE = 24000;
-const REASONING_EFFORTS = ["none", "low", "medium", "high", "xhigh"];
-const OPENAI_AGENT_MODELS = ["gpt-6-sol", "gpt-6-luna", "gpt-6.1-sol", "gpt-5.5"];
-// Model names as OpenAI lists them. Fast mode is a separate switch.
-const CODEX_AGENT_MODELS = ["gpt-6-sol", "gpt-6-luna", "gpt-6.1-sol"];
+// GPT-6.1 Sol takes low to max; it rejects "none".
+const REASONING_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+// GPT-6.1 Sol only; src/settings-store.js says why. Model names as OpenAI
+// lists them; Fast mode is a separate switch.
+const OPENAI_AGENT_MODELS = ["gpt-6.1-sol"];
+const CODEX_AGENT_MODELS = ["gpt-6.1-sol"];
 // Models OpenAI serves for realtime transcription sessions (October 2026).
 const OPENAI_TRANSCRIPTION_MODELS = ["gpt-live-transcribe", "gpt-realtime-whisper"];
 const LANGUAGE_LABELS = {

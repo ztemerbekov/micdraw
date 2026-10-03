@@ -9,10 +9,18 @@ export const MAX_AGENT_INSTRUCTIONS_CHARS = 100_000;
 
 // Models that Codex with ChatGPT sign-in no longer serves (GPT-5.5 from
 // 2026-10-14). A saved pick of one of them would fail every agent turn, so
-// load() moves it to GPT-6 Sol. The OpenAI API still serves them, so API
+// load() moves it to GPT-6.1 Sol. The OpenAI API still serves them, so API
 // settings are left alone.
 const RETIRED_CODEX_MODELS = new Set(["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.3-codex-spark", "gpt-5.2"]);
-const CODEX_REPLACEMENT_MODEL = "gpt-6-sol";
+const CODEX_REPLACEMENT_MODEL = "gpt-6.1-sol";
+// Models Mic Draw stopped offering: GPT-6 Luna deleted stages and duplicated
+// cards on replayed real turns (#52), and in use both drew clearly worse than
+// GPT-6.1 Sol. They were the defaults for a while, so a saved pick moves on,
+// for Codex and the OpenAI API alike.
+const DROPPED_AGENT_MODELS = new Set(["gpt-6-sol", "gpt-6-luna"]);
+const AGENT_REPLACEMENT_MODEL = "gpt-6.1-sol";
+// GPT-6.1 Sol rejects this reasoning effort, which the menu used to offer.
+const RETIRED_REASONING_EFFORT = "none";
 // OpenAI deprecated these for removal on 2027-02-26, and its model pages
 // already list realtime transcription as not supported. A saved pick moves to
 // the documented replacement (issue #26, checked against the docs only).
@@ -22,10 +30,10 @@ const OPENAI_TRANSCRIPTION_REPLACEMENT_MODEL = "gpt-live-transcribe";
 export const DEFAULT_SETTINGS = Object.freeze({
   agent: {
     provider: "openai",
-    openai: { model: "gpt-6-sol", reasoningEffort: "low", baseURL: "https://api.openai.com/v1" },
+    openai: { model: "gpt-6.1-sol", reasoningEffort: "low", baseURL: "https://api.openai.com/v1" },
     // `fast` sends Codex requests in OpenAI's Fast mode: quicker replies, at
     // 2.5x the ChatGPT plan usage.
-    codex: { model: "gpt-6-sol", fast: true, baseURL: "https://chatgpt.com/backend-api/codex" },
+    codex: { model: "gpt-6.1-sol", fast: true, baseURL: "https://chatgpt.com/backend-api/codex" },
     ollama: { model: "", baseURL: "http://localhost:11434/v1" },
     openrouter: { model: "x-ai/grok-4.20", baseURL: "https://openrouter.ai/api/v1" },
   },
@@ -79,12 +87,12 @@ export function createSettingsStore({ filePath, env = process.env, readCodexAuth
     if (cached) return cached;
     const fromDisk = await readFromDisk();
     if (fromDisk) {
-      cached = replaceRetiredModels(splitFastMode(fromDisk.settings, fromDisk.saved));
+      cached = replaceRetiredChoices(splitFastMode(fromDisk.settings, fromDisk.saved));
       if (cached !== fromDisk.settings) await writeToDisk(cached);
       return cached;
     }
     const seededFromEnv = seedFromEnv(cloneDefaults(), env, readCodexAuth);
-    const seeded = replaceRetiredModels(splitFastMode(seededFromEnv, seededFromEnv));
+    const seeded = replaceRetiredChoices(splitFastMode(seededFromEnv, seededFromEnv));
     await writeToDisk(seeded);
     cached = seeded;
     return cached;
@@ -117,7 +125,7 @@ export function createSettingsStore({ filePath, env = process.env, readCodexAuth
 }
 
 // Settings written before Fast mode had its own switch named it in the model
-// ("gpt-6-luna-fast"), and a name without the suffix meant Fast mode off.
+// ("gpt-6.1-sol-fast"), and a name without the suffix meant Fast mode off.
 // Split such a name into the real model and the `fast` flag. An explicit
 // `fast` in the saved file wins.
 function splitFastMode(settings, saved) {
@@ -129,12 +137,25 @@ function splitFastMode(settings, saved) {
   return deepMerge(settings, { agent: { codex: { model, fast: named } } });
 }
 
-function replaceRetiredModels(settings) {
+function replaceRetiredChoices(settings) {
   let next = settings;
   const codexModel = next.agent?.codex?.model ?? "";
   if (RETIRED_CODEX_MODELS.has(codexModel)) {
     console.log(`[micdraw] Codex no longer serves ${codexModel}; switched the Codex agent model to ${CODEX_REPLACEMENT_MODEL}.`);
     next = deepMerge(next, { agent: { codex: { model: CODEX_REPLACEMENT_MODEL } } });
+  } else if (DROPPED_AGENT_MODELS.has(codexModel)) {
+    console.log(`[micdraw] Mic Draw no longer offers ${codexModel}; switched the Codex agent model to ${AGENT_REPLACEMENT_MODEL}.`);
+    next = deepMerge(next, { agent: { codex: { model: AGENT_REPLACEMENT_MODEL } } });
+  }
+  const openaiModel = next.agent?.openai?.model ?? "";
+  if (DROPPED_AGENT_MODELS.has(openaiModel)) {
+    console.log(`[micdraw] Mic Draw no longer offers ${openaiModel}; switched the OpenAI agent model to ${AGENT_REPLACEMENT_MODEL}.`);
+    next = deepMerge(next, { agent: { openai: { model: AGENT_REPLACEMENT_MODEL } } });
+  }
+  if (next.agent?.openai?.reasoningEffort === RETIRED_REASONING_EFFORT) {
+    const replacement = DEFAULT_SETTINGS.agent.openai.reasoningEffort;
+    console.log(`[micdraw] GPT-6.1 Sol does not take reasoning effort "${RETIRED_REASONING_EFFORT}"; switched it to ${replacement}.`);
+    next = deepMerge(next, { agent: { openai: { reasoningEffort: replacement } } });
   }
   const transcriptionModel = next.transcription?.openai?.model ?? "";
   if (RETIRED_OPENAI_TRANSCRIPTION_MODELS.has(transcriptionModel)) {
