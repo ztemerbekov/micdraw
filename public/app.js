@@ -10,10 +10,9 @@ import { STARTER_ELEMENTS } from "./starter-elements.js";
 
 const SAMPLE_RATE = 24000;
 const REASONING_EFFORTS = ["none", "low", "medium", "high", "xhigh"];
-const OPENAI_AGENT_MODELS = ["gpt-6-luna", "gpt-6-sol", "gpt-6.1-sol", "gpt-5.5"];
-// "-fast" sends the request in Fast mode: quicker, but it uses more of the
-// ChatGPT plan.
-const CODEX_AGENT_MODELS = ["gpt-6-luna-fast", "gpt-6-luna", "gpt-6-sol-fast", "gpt-6-sol", "gpt-6.1-sol-fast", "gpt-6.1-sol"];
+const OPENAI_AGENT_MODELS = ["gpt-6-sol", "gpt-6-luna", "gpt-6.1-sol", "gpt-5.5"];
+// Model names as OpenAI lists them. Fast mode is a separate switch.
+const CODEX_AGENT_MODELS = ["gpt-6-sol", "gpt-6-luna", "gpt-6.1-sol"];
 // Models OpenAI serves for realtime transcription sessions (October 2026).
 const OPENAI_TRANSCRIPTION_MODELS = ["gpt-live-transcribe", "gpt-realtime-whisper"];
 const LANGUAGE_LABELS = {
@@ -1309,7 +1308,8 @@ function statusRow({
 function agentModelLabel(settings) {
   const provider = settings.agent.provider;
   if (provider === "ollama") return settings.agent.ollama.model || "(unset)";
-  if (provider === "codex") return settings.agent.codex.model;
+  if (provider === "codex")
+    return `${settings.agent.codex.model}${settings.agent.codex.fast === false ? "" : " · fast"}`;
   if (provider === "openrouter")
     return settings.agent.openrouter?.model || "(unset)";
   return settings.agent.openai.model;
@@ -1458,6 +1458,9 @@ function AgentEditor({ settings, onSave, onCancel }) {
   const [codexModel, setCodexModel] = React.useState(
     settings.agent.codex.model,
   );
+  const [codexFast, setCodexFast] = React.useState(
+    settings.agent.codex.fast !== false,
+  );
   const [ollamaModel, setOllamaModel] = React.useState(
     settings.agent.ollama.model,
   );
@@ -1492,6 +1495,7 @@ function AgentEditor({ settings, onSave, onCancel }) {
       patch.agent.openai.baseURL = openaiBaseURL;
     } else if (provider === "codex") {
       patch.agent.codex.model = codexModel;
+      patch.agent.codex.fast = codexFast;
     } else if (provider === "openrouter") {
       patch.agent.openrouter.model = openrouterModel;
       patch.agent.openrouter.baseURL = openrouterBaseURL;
@@ -1582,6 +1586,22 @@ function AgentEditor({ settings, onSave, onCancel }) {
       ? field(
           "Model",
           select(codexModel, setCodexModel, CODEX_AGENT_MODELS, busy),
+        )
+      : null,
+    provider === "codex"
+      ? field(
+          "Fast mode",
+          React.createElement(
+            "label",
+            null,
+            React.createElement("input", {
+              type: "checkbox",
+              checked: codexFast,
+              onChange: (e) => setCodexFast(e.target.checked),
+              disabled: busy,
+            }),
+            " Faster replies; uses your ChatGPT plan 2.5x faster",
+          ),
         )
       : null,
     provider === "ollama"

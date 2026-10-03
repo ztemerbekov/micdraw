@@ -96,8 +96,11 @@ test("frontend offers GPT-6 agent models and no model Codex has retired", () => 
   const codexModels = appSource.match(/const CODEX_AGENT_MODELS = (\[[^\]]*\])/)?.[1];
   const openaiModels = appSource.match(/const OPENAI_AGENT_MODELS = (\[[^\]]*\])/)?.[1];
 
-  assert.deepEqual(JSON.parse(codexModels ?? "[]"), ["gpt-6-luna-fast", "gpt-6-luna", "gpt-6-sol-fast", "gpt-6-sol", "gpt-6.1-sol-fast", "gpt-6.1-sol"]);
-  assert.deepEqual(JSON.parse(openaiModels ?? "[]"), ["gpt-6-luna", "gpt-6-sol", "gpt-6.1-sol", "gpt-5.5"]);
+  // Real model names only; Fast mode is its own switch.
+  assert.deepEqual(JSON.parse(codexModels ?? "[]"), ["gpt-6-sol", "gpt-6-luna", "gpt-6.1-sol"]);
+  assert.deepEqual(JSON.parse(openaiModels ?? "[]"), ["gpt-6-sol", "gpt-6-luna", "gpt-6.1-sol", "gpt-5.5"]);
+  assert.match(appSource, /type: "checkbox",\s*checked: codexFast,/);
+  assert.match(appSource, /patch\.agent\.codex\.fast = codexFast;/);
   // A saved model missing from a menu still shows as selected.
   assert.match(appSource, /function select\(value, onChange, options, disabled\) \{[\s\S]*options\.includes\(value\)/);
 });

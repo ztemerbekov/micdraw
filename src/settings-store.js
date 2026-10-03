@@ -9,10 +9,10 @@ export const MAX_AGENT_INSTRUCTIONS_CHARS = 100_000;
 
 // Models that Codex with ChatGPT sign-in no longer serves (GPT-5.5 from
 // 2026-10-14). A saved pick of one of them would fail every agent turn, so
-// load() moves it to GPT-6 Luna and keeps the "-fast" suffix. The OpenAI API
-// still serves them, so API settings are left alone.
+// load() moves it to GPT-6 Sol. The OpenAI API still serves them, so API
+// settings are left alone.
 const RETIRED_CODEX_MODELS = new Set(["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.3-codex-spark", "gpt-5.2"]);
-const CODEX_REPLACEMENT_MODEL = "gpt-6-luna";
+const CODEX_REPLACEMENT_MODEL = "gpt-6-sol";
 // OpenAI deprecated these for removal on 2027-02-26, and its model pages
 // already list realtime transcription as not supported. A saved pick moves to
 // the documented replacement (issue #26, checked against the docs only).
@@ -22,8 +22,10 @@ const OPENAI_TRANSCRIPTION_REPLACEMENT_MODEL = "gpt-live-transcribe";
 export const DEFAULT_SETTINGS = Object.freeze({
   agent: {
     provider: "openai",
-    openai: { model: "gpt-6-luna", reasoningEffort: "low", baseURL: "https://api.openai.com/v1" },
-    codex: { model: "gpt-6-luna-fast", baseURL: "https://chatgpt.com/backend-api/codex" },
+    openai: { model: "gpt-6-sol", reasoningEffort: "low", baseURL: "https://api.openai.com/v1" },
+    // `fast` sends Codex requests in OpenAI's Fast mode: quicker replies, at
+    // 2.5x the ChatGPT plan usage.
+    codex: { model: "gpt-6-sol", fast: true, baseURL: "https://chatgpt.com/backend-api/codex" },
     ollama: { model: "", baseURL: "http://localhost:11434/v1" },
     openrouter: { model: "x-ai/grok-4.20", baseURL: "https://openrouter.ai/api/v1" },
   },
@@ -57,8 +59,8 @@ export function createSettingsStore({ filePath, env = process.env, readCodexAuth
 
   async function readFromDisk() {
     try {
-      const raw = await fs.readFile(filePath, "utf8");
-      return deepMerge(cloneDefaults(), JSON.parse(raw));
+      const saved = JSON.parse(await fs.readFile(filePath, "utf8"));
+      return { settings: deepMerge(cloneDefaults(), saved), saved };
     } catch (error) {
       if (error.code === "ENOENT") return null;
       throw error;
@@ -77,11 +79,12 @@ export function createSettingsStore({ filePath, env = process.env, readCodexAuth
     if (cached) return cached;
     const fromDisk = await readFromDisk();
     if (fromDisk) {
-      cached = replaceRetiredModels(fromDisk);
-      if (cached !== fromDisk) await writeToDisk(cached);
+      cached = replaceRetiredModels(splitFastMode(fromDisk.settings, fromDisk.saved));
+      if (cached !== fromDisk.settings) await writeToDisk(cached);
       return cached;
     }
-    const seeded = replaceRetiredModels(seedFromEnv(cloneDefaults(), env, readCodexAuth));
+    const seededFromEnv = seedFromEnv(cloneDefaults(), env, readCodexAuth);
+    const seeded = replaceRetiredModels(splitFastMode(seededFromEnv, seededFromEnv));
     await writeToDisk(seeded);
     cached = seeded;
     return cached;
@@ -113,15 +116,25 @@ export function createSettingsStore({ filePath, env = process.env, readCodexAuth
   return { load, save, getSanitized };
 }
 
+// Settings written before Fast mode had its own switch named it in the model
+// ("gpt-6-luna-fast"), and a name without the suffix meant Fast mode off.
+// Split such a name into the real model and the `fast` flag. An explicit
+// `fast` in the saved file wins.
+function splitFastMode(settings, saved) {
+  const savedCodex = saved?.agent?.codex ?? {};
+  if (typeof savedCodex.model !== "string" || typeof savedCodex.fast === "boolean") return settings;
+  const named = savedCodex.model.endsWith("-fast");
+  const model = named ? savedCodex.model.slice(0, -"-fast".length) : savedCodex.model;
+  if (model === settings.agent.codex.model && named === settings.agent.codex.fast) return settings;
+  return deepMerge(settings, { agent: { codex: { model, fast: named } } });
+}
+
 function replaceRetiredModels(settings) {
   let next = settings;
   const codexModel = next.agent?.codex?.model ?? "";
-  const fast = codexModel.endsWith("-fast");
-  const codexBase = fast ? codexModel.slice(0, -"-fast".length) : codexModel;
-  if (RETIRED_CODEX_MODELS.has(codexBase)) {
-    const replacement = CODEX_REPLACEMENT_MODEL + (fast ? "-fast" : "");
-    console.log(`[micdraw] Codex no longer serves ${codexModel}; switched the Codex agent model to ${replacement}.`);
-    next = deepMerge(next, { agent: { codex: { model: replacement } } });
+  if (RETIRED_CODEX_MODELS.has(codexModel)) {
+    console.log(`[micdraw] Codex no longer serves ${codexModel}; switched the Codex agent model to ${CODEX_REPLACEMENT_MODEL}.`);
+    next = deepMerge(next, { agent: { codex: { model: CODEX_REPLACEMENT_MODEL } } });
   }
   const transcriptionModel = next.transcription?.openai?.model ?? "";
   if (RETIRED_OPENAI_TRANSCRIPTION_MODELS.has(transcriptionModel)) {

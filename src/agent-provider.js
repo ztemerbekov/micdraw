@@ -2,10 +2,11 @@ import { createOpenAI } from "@ai-sdk/openai";
 
 import { DEFAULT_CODEX_BASE_URL, createCodexFetch, readCodexCliAuthSync } from "./codex-auth.js";
 
-// GPT-6 Luna started drawing sooner than GPT-5.5 on replayed real turns, at
-// comparable quality (issue #24). GPT-5.5 leaves Codex on 2026-10-14.
-const DEFAULT_OPENAI_AGENT_MODEL = "gpt-6-luna";
-const DEFAULT_CODEX_AGENT_MODEL = "gpt-6-luna-fast";
+// GPT-6 Sol made none of the edit mistakes GPT-6 Luna made on replayed real
+// turns (deleted stages, duplicate ids) and was faster than GPT-5.5 there.
+// GPT-5.5 leaves Codex on 2026-10-14.
+const DEFAULT_OPENAI_AGENT_MODEL = "gpt-6-sol";
+const DEFAULT_CODEX_AGENT_MODEL = "gpt-6-sol";
 const DEFAULT_OPENAI_REASONING_EFFORT = "low";
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1";
@@ -68,10 +69,15 @@ export function resolveAgentProviderFromSettings({ settings, env = process.env }
   if (provider === "codex") {
     const codexAuth = readCodexCliAuthSync(env);
     if (!codexAuth) throw new Error("Codex CLI auth not found. Run `codex` and sign in with ChatGPT.");
-    const codexModel = resolveCodexModel(settings.agent.codex.model || DEFAULT_CODEX_AGENT_MODEL);
+    // Fast mode is OpenAI's "priority" service tier. Older settings named it
+    // in the model ("gpt-6-luna-fast"); still read that.
+    const requested = settings.agent.codex.model || DEFAULT_CODEX_AGENT_MODEL;
+    const namedFast = requested.endsWith("-fast");
+    const fast = namedFast || (settings.agent.codex.fast ?? true);
     return {
       provider: "codex",
-      ...codexModel,
+      model: namedFast ? requested.slice(0, -"-fast".length) : requested,
+      ...(fast ? { serviceTier: "priority" } : {}),
       baseURL: withoutTrailingSlash(settings.agent.codex.baseURL ?? DEFAULT_CODEX_BASE_URL),
       apiKey: codexAuth.accessToken,
       reasoningEffort: validateReasoningEffort(settings.agent.openai.reasoningEffort),
@@ -143,15 +149,4 @@ function cleanEnvValue(value) {
 
 function withoutTrailingSlash(value) {
   return value.replace(/\/+$/, "");
-}
-
-function resolveCodexModel(requestedModel) {
-  if (requestedModel.endsWith("-fast")) {
-    return {
-      model: requestedModel.slice(0, -"-fast".length),
-      requestedModel,
-      serviceTier: "priority",
-    };
-  }
-  return { model: requestedModel };
 }

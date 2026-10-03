@@ -10,8 +10,8 @@ function settingsBase() {
   return {
     agent: {
       provider: "openai",
-      openai: { model: "gpt-6-luna", reasoningEffort: "low", baseURL: "https://api.openai.com/v1" },
-      codex: { model: "gpt-6-luna-fast", baseURL: "https://chatgpt.com/backend-api/codex" },
+      openai: { model: "gpt-6-sol", reasoningEffort: "low", baseURL: "https://api.openai.com/v1" },
+      codex: { model: "gpt-6-sol", fast: true, baseURL: "https://chatgpt.com/backend-api/codex" },
       ollama: { model: "", baseURL: "http://localhost:11434/v1" },
     },
     apiKeys: { openai: "" },
@@ -100,12 +100,11 @@ test("resolveAgentProviderFromSettings returns Codex provider using filesystem a
 
   const settings = settingsBase();
   settings.agent.provider = "codex";
-  settings.agent.codex.model = "gpt-6-luna-fast";
+  settings.agent.codex.model = "gpt-6-sol";
 
   assert.deepEqual(resolveAgentProviderFromSettings({ settings, env: { CODEX_HOME: codexHome } }), {
     provider: "codex",
-    model: "gpt-6-luna",
-    requestedModel: "gpt-6-luna-fast",
+    model: "gpt-6-sol",
     baseURL: "https://chatgpt.com/backend-api/codex",
     apiKey: "codex-token",
     reasoningEffort: "low",
@@ -120,16 +119,40 @@ test("resolveAgentProviderFromSettings defaults Codex provider to fast mode", ()
   const settings = settingsBase();
   settings.agent.provider = "codex";
   settings.agent.codex.model = "";
+  delete settings.agent.codex.fast;
 
   assert.deepEqual(resolveAgentProviderFromSettings({ settings, env: { CODEX_HOME: codexHome } }), {
     provider: "codex",
-    model: "gpt-6-luna",
-    requestedModel: "gpt-6-luna-fast",
+    model: "gpt-6-sol",
     baseURL: "https://chatgpt.com/backend-api/codex",
     apiKey: "codex-token",
     reasoningEffort: "low",
     serviceTier: "priority",
   });
+});
+
+test("resolveAgentProviderFromSettings sends Codex without Fast mode when it is off", () => {
+  const codexHome = mkdtempSync(join(tmpdir(), "micdraw-codex-standard-"));
+  writeFileSync(join(codexHome, "auth.json"), JSON.stringify({ tokens: { access_token: "codex-token", refresh_token: "refresh" } }));
+  const settings = settingsBase();
+  settings.agent.provider = "codex";
+  settings.agent.codex.fast = false;
+
+  const resolved = /** @type {any} */ (resolveAgentProviderFromSettings({ settings, env: { CODEX_HOME: codexHome } }));
+  assert.equal(resolved.model, "gpt-6-sol");
+  assert.equal(resolved.serviceTier, undefined);
+});
+
+test("resolveAgentProviderFromSettings still reads an old name ending in -fast", () => {
+  const codexHome = mkdtempSync(join(tmpdir(), "micdraw-codex-legacy-"));
+  writeFileSync(join(codexHome, "auth.json"), JSON.stringify({ tokens: { access_token: "codex-token", refresh_token: "refresh" } }));
+  const settings = settingsBase();
+  settings.agent.provider = "codex";
+  settings.agent.codex = /** @type {any} */ ({ model: "gpt-6-luna-fast", baseURL: "https://chatgpt.com/backend-api/codex" });
+
+  const resolved = /** @type {any} */ (resolveAgentProviderFromSettings({ settings, env: { CODEX_HOME: codexHome } }));
+  assert.equal(resolved.model, "gpt-6-luna");
+  assert.equal(resolved.serviceTier, "priority");
 });
 
 test("resolveAgentProviderFromSettings throws when Codex auth is unavailable", () => {
