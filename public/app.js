@@ -132,6 +132,9 @@ function App() {
   const shellRef = React.useRef(null);
   const userElementsSyncTimerRef = React.useRef(null);
   const lastSyncedElementsHashRef = React.useRef("");
+  // Set by a pointer press on the canvas: the next canvas change is the
+  // user's own edit rather than the page drawing the agent's board.
+  const userTouchedCanvasRef = React.useRef(false);
   // The agent's last board, by element id, to tell what a preview changed.
   const agentBoardRef = React.useRef(new Map());
   const listeningRef = React.useRef(false);
@@ -218,6 +221,11 @@ function App() {
     // back via onChange, which break the agent's cache prefix and confuse
     // line-numbered references. Sync only during the pre-listen window.
     if (listeningRef.current) return;
+    // Changes the page made itself, drawing the agent's board, must not go
+    // back: the server would swap the agent's compact elements for
+    // Excalidraw's expanded ones and every later turn would carry the bloat
+    // (#41). Only a canvas the user touched has edits worth sending.
+    if (!userTouchedCanvasRef.current) return;
     clearTimeout(userElementsSyncTimerRef.current);
     userElementsSyncTimerRef.current = setTimeout(() => {
       const ws = wsRef.current;
@@ -226,6 +234,7 @@ function App() {
       const hash = JSON.stringify(cleaned);
       if (hash === lastSyncedElementsHashRef.current) return;
       lastSyncedElementsHashRef.current = hash;
+      userTouchedCanvasRef.current = false;
       ws.send(
         JSON.stringify({ type: "whiteboard:user-elements", elements: cleaned }),
       );
@@ -567,6 +576,8 @@ function App() {
   function applyScene(elements, { recenter = false } = {}) {
     const excalidrawAPI = apiRef.current;
     if (!excalidrawAPI || !Array.isArray(elements)) return;
+    // What the page draws from here on is not a user edit.
+    userTouchedCanvasRef.current = false;
     const looksNative =
       elements.length > 0 &&
       elements[0] &&
@@ -791,6 +802,9 @@ function App() {
           appState: { viewBackgroundColor: "#fffdf8" },
         },
         onChange: handleExcalidrawChange,
+        onPointerDown: () => {
+          userTouchedCanvasRef.current = true;
+        },
       }),
       React.createElement(
         "div",
