@@ -16,7 +16,26 @@ const OPENAI_AGENT_MODELS = ["gpt-6-luna", "gpt-6-sol", "gpt-6.1-sol", "gpt-5.5"
 const CODEX_AGENT_MODELS = ["gpt-6-luna-fast", "gpt-6-luna", "gpt-6-sol-fast", "gpt-6-sol", "gpt-6.1-sol-fast", "gpt-6.1-sol"];
 // Models OpenAI serves for realtime transcription sessions (October 2026).
 const OPENAI_TRANSCRIPTION_MODELS = ["gpt-live-transcribe", "gpt-realtime-whisper"];
-const LANGUAGE_LABELS = { en: "English", ru: "Русский" };
+const LANGUAGE_LABELS = {
+  en: "English",
+  ru: "Русский",
+  de: "Deutsch",
+  fr: "Français",
+  es: "Español",
+  zh: "中文",
+  pt: "Português",
+  it: "Italiano",
+  ja: "日本語",
+  ko: "한국어",
+  hi: "हिन्दी",
+  uk: "Українська",
+  pl: "Polski",
+  tr: "Türkçe",
+  nl: "Nederlands",
+  ar: "العربية",
+  // Deepgram's nova-3 "multi": several languages mixed in one talk.
+  multi: "Mixed languages",
+};
 const DEEPGRAM_TRANSCRIPTION_MODELS = ["nova-3", "nova-2"];
 // Free-text, not a dropdown: OpenRouter's catalogue changes weekly and a fixed
 // list here would be wrong within the month.
@@ -80,7 +99,8 @@ function App() {
   const [transcriptionStatus, setTranscriptionStatus] = React.useState(null);
   const [settings, setSettings] = React.useState(null);
   const [localModels, setLocalModels] = React.useState([]);
-  const [languages, setLanguages] = React.useState(["en"]);
+  // Languages each transcription provider offers, from /api/config.
+  const [languages, setLanguages] = React.useState({ local: ["en"] });
   const [captionText, setCaptionText] = React.useState("");
   const [error, setError] = React.useState("");
   const [micError, setMicError] = React.useState(false);
@@ -334,7 +354,7 @@ function App() {
         setTranscriptionStatus(config.transcriptionStatus ?? null);
         if (config.settings) setSettings(config.settings);
         setLocalModels(config.localModels ?? []);
-        setLanguages(config.languages ?? ["en"]);
+        setLanguages(config.languages ?? { local: ["en"] });
       })
       .catch((err) => setError(err.message));
   }, []);
@@ -1714,6 +1734,13 @@ function TranscriptionEditor({
     setLanguage(next);
     setLocalModelId(savedLocalModel(next));
   }
+  const providerLanguages = languages[provider === "moonshine" ? "local" : provider] ?? ["en"];
+  // A language the new provider does not offer falls back to its first one.
+  function chooseProvider(next) {
+    setProvider(next);
+    const offered = languages[next === "moonshine" ? "local" : next] ?? ["en"];
+    if (!offered.includes(language)) chooseLanguage(offered[0]);
+  }
   const [openaiModel, setOpenaiModel] = React.useState(
     settings.transcription.openai.model,
   );
@@ -1739,13 +1766,9 @@ function TranscriptionEditor({
     const patch = {
       transcription: { provider, openai: {}, deepgram: {} },
     };
-    if (provider === "local") {
-      Object.assign(patch.transcription, {
-        language,
-        ...(localModelId
-          ? { local: { models: { [language]: localModelId } } }
-          : {}),
-      });
+    patch.transcription.language = language;
+    if (provider === "local" && localModelId) {
+      patch.transcription.local = { models: { [language]: localModelId } };
     }
     if (provider === "openai") patch.transcription.openai.model = openaiModel;
     if (provider === "deepgram") {
@@ -1776,7 +1799,7 @@ function TranscriptionEditor({
         "select",
         {
           value: provider,
-          onChange: (e) => setProvider(e.target.value),
+          onChange: (e) => chooseProvider(e.target.value),
           disabled: busy,
         },
         React.createElement(
@@ -1825,20 +1848,18 @@ function TranscriptionEditor({
           }),
         )
       : null,
-    provider === "local"
-      ? field(
-          "Language",
-          labeledSelect(
-            language,
-            chooseLanguage,
-            languages.map((code) => ({
-              value: code,
-              label: LANGUAGE_LABELS[code] ?? code,
-            })),
-            busy,
-          ),
-        )
-      : null,
+    field(
+      "Language",
+      labeledSelect(
+        language,
+        chooseLanguage,
+        providerLanguages.map((code) => ({
+          value: code,
+          label: LANGUAGE_LABELS[code] ?? code,
+        })),
+        busy,
+      ),
+    ),
     provider === "local"
       ? field(
           "Model",

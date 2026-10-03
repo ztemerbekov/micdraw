@@ -10,6 +10,13 @@ const REALTIME_URL = "wss://api.openai.com/v1/realtime?intent=transcription";
 // returns "The 'prompt' parameter is not supported for this model".)
 const MODELS_WITHOUT_PROMPT_SUPPORT = new Set(["gpt-realtime-whisper"]);
 
+// Models documented to take `languages` hints (ISO 639-1, or a zh locale).
+// gpt-realtime-whisper documents none, so it keeps detecting the language.
+// From OpenAI's docs, not verified live (#14).
+const MODELS_WITH_LANGUAGE_HINTS = new Set(["gpt-live-transcribe"]);
+// Mandarin in simplified characters.
+const OPENAI_LANGUAGE_CODES = { zh: "zh-cn" };
+
 // We don't trust transcription.completed to drive agent turns. Some models
 // (notably gpt-realtime-whisper) wipe turn_detection on every session.update,
 // so server-VAD never auto-commits and completed never fires until the user
@@ -23,8 +30,11 @@ const MODELS_WITHOUT_PROMPT_SUPPORT = new Set(["gpt-realtime-whisper"]);
 // mid-sentence breaths without splitting one thought into multiple turns.
 const DEFAULT_DELTA_QUIET_MS = 1000;
 
-function buildTranscriptionSession(model, vocabularyPrompt, { includeEmptyPrompt = false } = {}) {
+function buildTranscriptionSession(model, vocabularyPrompt, { includeEmptyPrompt = false, language = undefined } = {}) {
   const transcription = { model };
+  if (language && MODELS_WITH_LANGUAGE_HINTS.has(model)) {
+    transcription.languages = [OPENAI_LANGUAGE_CODES[language] ?? language];
+  }
   if (!MODELS_WITHOUT_PROMPT_SUPPORT.has(model)) {
     if (vocabularyPrompt) transcription.prompt = vocabularyPrompt;
     else if (includeEmptyPrompt) transcription.prompt = "";
@@ -121,7 +131,7 @@ export function createOpenAITranscription({
       configured = true;
       socket.send(JSON.stringify({
         type: "session.update",
-        session: buildTranscriptionSession(options.openaiTranscriptionModel, vocabularyPrompt),
+        session: buildTranscriptionSession(options.openaiTranscriptionModel, vocabularyPrompt, { language: options.transcriptionLanguage }),
       }));
       for (const audio of pendingAudio) {
         socket.send(JSON.stringify({ type: "input_audio_buffer.append", audio }));
@@ -224,7 +234,7 @@ export function createOpenAITranscription({
       // clear a previously-set prompt by sending an explicit empty string.
       socket.send(JSON.stringify({
         type: "session.update",
-        session: buildTranscriptionSession(options.openaiTranscriptionModel, vocabularyPrompt, { includeEmptyPrompt: true }),
+        session: buildTranscriptionSession(options.openaiTranscriptionModel, vocabularyPrompt, { includeEmptyPrompt: true, language: options.transcriptionLanguage }),
       }));
     },
     stop: () => {

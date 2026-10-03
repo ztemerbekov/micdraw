@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { readCodexCliAuthSync } from "./codex-auth.js";
+import { transcriptionLanguages } from "./languages.js";
 import { LOCAL_MODELS, SUPPORTED_LANGUAGES } from "./local-models.js";
 
 export const MAX_AGENT_INSTRUCTIONS_CHARS = 100_000;
@@ -90,7 +91,7 @@ export function createSettingsStore({ filePath, env = process.env, readCodexAuth
     if (!cached) await load();
     validateAgentInstructions(partial?.agentInstructions);
     validateBaseURLs(partial);
-    validateTranscription(partial?.transcription);
+    validateTranscription(partial?.transcription, cached.transcription);
     cached = deepMerge(cached, partial);
     await writeToDisk(cached);
     return cached;
@@ -229,14 +230,18 @@ export function validateAgentInstructions(value) {
 
 const TRANSCRIPTION_PROVIDERS = ["local", "moonshine", "openai", "deepgram"];
 
-function validateTranscription(transcription) {
+function validateTranscription(transcription, current = {}) {
   if (!transcription || typeof transcription !== "object") return;
   const { provider, language, local } = transcription;
   if (provider !== undefined && !TRANSCRIPTION_PROVIDERS.includes(provider)) {
     throw new Error(`Unknown transcription provider "${provider}".`);
   }
-  if (language !== undefined && !SUPPORTED_LANGUAGES.includes(language)) {
-    throw new Error(`Unsupported transcription language "${language}".`);
+  // The language must suit the provider it ends up with, including when only
+  // one of the two changes.
+  const nextProvider = provider ?? current.provider;
+  const nextLanguage = language ?? current.language;
+  if ((language !== undefined || provider !== undefined) && nextLanguage !== undefined && !transcriptionLanguages(nextProvider).includes(nextLanguage)) {
+    throw new Error(`Unsupported transcription language "${nextLanguage}".`);
   }
   for (const [lang, id] of Object.entries(local?.models ?? {})) {
     if (!SUPPORTED_LANGUAGES.includes(lang)) throw new Error(`Unsupported transcription language "${lang}".`);

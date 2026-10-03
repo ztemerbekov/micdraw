@@ -16,7 +16,8 @@ import {
   resolveAgentProviderFromSettings,
 } from "./agent-provider.js";
 import { createDeepgramTranscription as createDefaultDeepgramTranscription } from "./deepgram-transcription.js";
-import { localModelSummaries, resolveLocalModel, SUPPORTED_LANGUAGES } from "./local-models.js";
+import { transcriptionLanguages } from "./languages.js";
+import { localModelSummaries, resolveLocalModel } from "./local-models.js";
 import { createMoonshineTranscription as createDefaultMoonshineTranscription } from "./moonshine-transcription.js";
 import { createOpenAITranscription as createDefaultOpenAITranscription } from "./openai-transcription.js";
 import { isAllowedRequest } from "./request-guard.js";
@@ -77,7 +78,11 @@ export async function startServer(options) {
       transcriptionEngine: transcription.getLabel(),
       transcriptionStatus: transcription.getStatus(),
       settings: sanitized,
-      languages: SUPPORTED_LANGUAGES,
+      languages: {
+        local: transcriptionLanguages("local"),
+        openai: transcriptionLanguages("openai"),
+        deepgram: transcriptionLanguages("deepgram"),
+      },
       localModels: localModelSummaries(options.platform ?? process.platform),
     });
   });
@@ -276,11 +281,11 @@ export function resolveTranscriptionEngine(transcription, platform = process.pla
   const provider = transcription?.provider ?? "local";
   if (provider === "openai") {
     const model = transcription.openai?.model;
-    return { kind: "openai", provider, model, label: `OpenAI ${model}` };
+    return { kind: "openai", provider, model, label: `OpenAI ${model}`, language: transcription.language };
   }
   if (provider === "deepgram") {
     const model = transcription.deepgram?.model ?? "";
-    return { kind: "deepgram", provider, model, label: `Deepgram ${model}`.trim() };
+    return { kind: "deepgram", provider, model, label: `Deepgram ${model}`.trim(), language: transcription.language };
   }
   if (provider === "moonshine") {
     const model = transcription.moonshine?.model ?? "medium";
@@ -316,6 +321,9 @@ export function transcriptionFactoryFor(kind) {
 async function createTranscriptionManager({ options, wss, queueTranscript, state }) {
   let current = null;
   let label = "";
+  // Label plus language: a cloud engine whose language changed must restart
+  // even though its label did not.
+  let engineKey = "";
   let sessionContext = null;
   let hasSessionContext = false;
   let activeProvider = null;
@@ -339,10 +347,15 @@ async function createTranscriptionManager({ options, wss, queueTranscript, state
     };
   }
 
+  function keyOf(engine) {
+    return engine.language ? `${engine.label}|${engine.language}` : engine.label;
+  }
+
   function buildOptionsForFactory(settings, engine, onProgress) {
     const engineOptions = {
       moonshineModel: engine.moonshineModel ?? options.moonshineModel,
       localModel: engine.localModel,
+      transcriptionLanguage: engine.language,
       modelsDir: options.modelsDir,
       onProgress,
     };
@@ -375,7 +388,7 @@ async function createTranscriptionManager({ options, wss, queueTranscript, state
   async function beginApply() {
     const settings = options.settingsStore ? await options.settingsStore.load() : null;
     const engine = resolveTranscriptionEngine(transcriptionFrom(settings), options.platform ?? process.platform);
-    if (current && engine.label === label) {
+    if (current && keyOf(engine) === engineKey) {
       generation += 1;
       loading?.close();
       loading = null;
@@ -418,6 +431,7 @@ async function createTranscriptionManager({ options, wss, queueTranscript, state
       const previous = current;
       current = next;
       label = engine.label;
+      engineKey = keyOf(engine);
       activeProvider = engine.provider;
       activeModel = engine.model ?? null;
       previous?.close();

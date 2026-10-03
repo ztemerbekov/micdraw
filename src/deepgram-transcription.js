@@ -8,6 +8,9 @@ const DEEPGRAM_LIVE_URL = "wss://api.deepgram.com/v1/listen";
 // keyterm hints.
 export const DEFAULT_DEEPGRAM_MODEL = "nova-3";
 
+// Mandarin in simplified characters.
+const DEEPGRAM_LANGUAGE_CODES = { zh: "zh-CN" };
+
 // The browser streams PCM16LE mono at 24 kHz (see public/app.js SAMPLE_RATE and
 // createAudioStreamer). Raw PCM carries no container, so Deepgram has nothing to
 // sniff: `encoding` and `sample_rate` are not optional here. Getting them wrong
@@ -55,6 +58,7 @@ export function buildDeepgramUrl({
   endpointingMs = DEFAULT_ENDPOINTING_MS,
   utteranceEndMs = DEFAULT_UTTERANCE_END_MS,
   keyterms = [],
+  language = undefined,
 } = {}) {
   const params = new URLSearchParams([
     ["model", model || DEFAULT_DEEPGRAM_MODEL],
@@ -70,8 +74,13 @@ export function buildDeepgramUrl({
     ["vad_events", "true"],
     ["utterance_end_ms", String(Math.max(1000, utteranceEndMs))],
   ]);
-  // `keyterm` is repeatable and is nova-3 only (English). It is how a proper
-  // noun that is on the staging board gets spelled the way the board spells it.
+  // nova-3 takes every Mic Draw cloud language, and "multi" for mixed speech
+  // (checked against Deepgram's docs, not verified live; #14). Without a
+  // language Deepgram assumes English.
+  if (language) params.append("language", DEEPGRAM_LANGUAGE_CODES[language] ?? language);
+  // `keyterm` is repeatable and is a nova-3 feature, monolingual and
+  // multilingual alike. It is how a proper noun that is on the staging board
+  // gets spelled the way the board spells it.
   for (const term of keyterms) params.append("keyterm", term);
   return `${DEEPGRAM_LIVE_URL}?${params.toString()}`;
 }
@@ -244,6 +253,7 @@ export function createDeepgramTranscription({
 
     const url = buildDeepgramUrl({
       model,
+      language: options.transcriptionLanguage,
       endpointingMs,
       utteranceEndMs,
       keyterms: activeKeyterms,

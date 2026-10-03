@@ -635,7 +635,8 @@ test("config lists the languages and the local models for the platform", async (
   });
   try {
     const config = await (await fetch(`${url}/api/config`)).json();
-    assert.deepEqual(config.languages, ["en", "ru"]);
+    const cloud = ["en", "ru", "de", "fr", "es", "zh", "pt", "it", "ja", "ko", "hi", "uk", "pl", "tr", "nl", "ar"];
+    assert.deepEqual(config.languages, { local: ["en", "ru"], openai: cloud, deepgram: [...cloud, "multi"] });
     assert.deepEqual(config.localModels.map((model) => model.id), ["kroko-en-2025-08-06", "vosk-small-ru-2025-08-16"]);
   } finally {
     await new Promise((resolve) => httpServer.close(resolve));

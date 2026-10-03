@@ -153,3 +153,20 @@ test("the most recent voice choice wins over one still loading", async () => {
     await server.close();
   }
 });
+
+test("changing only the language of a cloud provider restarts it with that language", async () => {
+  const server = await startWithEngines();
+  try {
+    await saveTranscription(server.url, { provider: "deepgram", language: "ru" });
+    assert.equal(server.engines.length, 2);
+    assert.equal(server.engines[1].options.transcriptionLanguage, "ru");
+    server.engines[1].finishLoading();
+    await waitFor(server.messages, (message) => message.type === "config" && message.transcriptionEngine === "Deepgram nova-3");
+
+    await saveTranscription(server.url, { language: "uk" });
+    assert.equal(server.engines.length, 3);
+    assert.equal(server.engines[2].options.transcriptionLanguage, "uk");
+  } finally {
+    await server.close();
+  }
+});

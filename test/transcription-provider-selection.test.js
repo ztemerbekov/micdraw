@@ -57,3 +57,8 @@ test("the legacy moonshine provider and the cloud providers keep their labels", 
   assert.equal(resolveTranscriptionEngine({ provider: "openai", openai: { model: "gpt-realtime-whisper" } }, "linux").label, "OpenAI gpt-realtime-whisper");
   assert.equal(resolveTranscriptionEngine({ provider: "deepgram", deepgram: { model: "nova-3" } }, "linux").label, "Deepgram nova-3");
 });
+
+test("cloud engines carry the chosen language", () => {
+  assert.equal(resolveTranscriptionEngine({ provider: "openai", language: "uk", openai: { model: "gpt-live-transcribe" } }, "linux").language, "uk");
+  assert.equal(resolveTranscriptionEngine({ provider: "deepgram", language: "multi", deepgram: { model: "nova-3" } }, "linux").language, "multi");
+});
