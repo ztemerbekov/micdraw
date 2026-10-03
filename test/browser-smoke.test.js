@@ -50,7 +50,7 @@ test("browser renders the app shell", async (t) => {
     await rm(userDataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
 
-  const tab = await waitForChromeTab(debugPort, url);
+  const tab = await waitForChromeTab(debugPort, url, chrome);
   const cdp = await CdpClient.connect(tab.webSocketDebuggerUrl);
   t.after(() => cdp.close());
   const text = await waitForRenderedText(cdp, "Start Preso");

@@ -68,24 +68,35 @@ export class CdpClient {
   }
 }
 
-export async function waitForChromeTab(debugPort, url) {
-  const deadline = Date.now() + 15_000;
+// On GitHub's Ubuntu runners Chrome has taken more than 15 s to show the
+// page, so the waits below are generous. They only run out when something is
+// broken.
+const CHROME_WAIT_MS = 60_000;
+
+/** The DevTools target showing `url`. Ends early if `chrome` exits. */
+export async function waitForChromeTab(debugPort, url, chrome = undefined) {
+  const deadline = Date.now() + CHROME_WAIT_MS;
+  let lastSeen = "no answer from the debugging endpoint";
   while (Date.now() < deadline) {
+    if (chrome && (chrome.exitCode !== null || chrome.signalCode !== null)) {
+      throw new Error(`Chrome exited (${chrome.exitCode ?? chrome.signalCode}) before showing ${url}.`);
+    }
     try {
       const tabs = await fetch(`http://127.0.0.1:${debugPort}/json`).then((res) => res.json());
       const tab = tabs.find((item) => item.url === url || item.url === `${url}/`);
       if (tab?.webSocketDebuggerUrl) return tab;
+      lastSeen = `tabs ${JSON.stringify(tabs.map((item) => item.url))}`;
     } catch {
       // Chrome can take a moment to expose the debugging endpoint.
     }
     await sleep(250);
   }
-  throw new Error("Timed out waiting for Chrome debug tab.");
+  throw new Error(`Timed out waiting for Chrome debug tab for ${url}; last saw ${lastSeen}.`);
 }
 
 /** Resolves with the page's text once it contains `expectedText`. */
 export async function waitForRenderedText(cdp, expectedText) {
-  const deadline = Date.now() + 20_000;
+  const deadline = Date.now() + CHROME_WAIT_MS;
   let lastText = "";
   while (Date.now() < deadline) {
     lastText = (await evaluateInPage(cdp, "document.body.innerText")) ?? "";

@@ -108,7 +108,7 @@ export async function runSimulation(options, agentProvider) {
         "--window-size=1440,1000",
       ],
     });
-    const tab = await waitForChromeTab(chromeDebugPort, server.url);
+    const tab = await waitForChromeTab(chromeDebugPort, server.url, chrome);
     cdp = await CdpClient.connect(tab.webSocketDebuggerUrl);
     await cdp.request("Page.enable");
     await cdp.request("Runtime.enable");
