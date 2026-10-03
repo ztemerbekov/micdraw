@@ -20,6 +20,7 @@ import { transcriptionLanguages } from "./languages.js";
 import { localModelSummaries, resolveLocalModel } from "./local-models.js";
 import { createMoonshineTranscription as createDefaultMoonshineTranscription } from "./moonshine-transcription.js";
 import { createOpenAITranscription as createDefaultOpenAITranscription } from "./openai-transcription.js";
+import { createReasoningEffortLookup } from "./reasoning-effort.js";
 import { isAllowedRequest } from "./request-guard.js";
 import { createSherpaTranscription as createDefaultSherpaTranscription } from "./sherpa-transcription.js";
 import { audioSecondsFromBase64Pcm16 } from "./session-cost.js";
@@ -545,11 +546,18 @@ function whiteboardTools({ overwrite, apply }) {
   };
 }
 
+// One per process, so each model is asked about once (src/reasoning-effort.js).
+const lookUpReasoningEffort = createReasoningEffortLookup();
+
+// A provider passed in options is used as is. One from settings gets the
+// lowest reasoning effort its model accepts when Mic Draw has to ask the
+// provider for it (xAI, OpenRouter, Ollama; #78).
 async function resolveRequestAgentProvider(options) {
-  return options.agentProvider
-    ?? (options.settingsStore
-      ? resolveAgentProviderFromSettings({ settings: await options.settingsStore.load(), env: options.env ?? process.env })
-      : defaultWhiteboardAgentProvider(options));
+  if (options.agentProvider) return options.agentProvider;
+  if (!options.settingsStore) return defaultWhiteboardAgentProvider(options);
+  const agentProvider = resolveAgentProviderFromSettings({ settings: await options.settingsStore.load(), env: options.env ?? process.env });
+  const reasoningEffort = await (options.reasoningEffortLookup ?? lookUpReasoningEffort)(agentProvider);
+  return reasoningEffort ? { ...agentProvider, reasoningEffort } : agentProvider;
 }
 
 // Fold the primer text into the system prompt for both openai and codex
@@ -971,18 +979,27 @@ export function logAgentUsage(label, result, extras = {}) {
 }
 
 function createWhiteboardAgentProviderOptions(agentProvider, effectiveSystem) {
-  if (!["openai", "codex"].includes(agentProvider.provider)) return undefined;
-  return {
-    openai: {
-      reasoningEffort: agentProvider.reasoningEffort,
-      ...(agentProvider.serviceTier ? { serviceTier: agentProvider.serviceTier } : {}),
-      // Codex's Responses API uses `instructions` instead of a system message.
-      // We pass the same effective system (base + primer text) here so codex
-      // gets the primer too. `store: false` disables server-side conversation
-      // storage; we send full history each turn.
-      ...(agentProvider.provider === "codex" ? { store: false, instructions: effectiveSystem } : {}),
-    },
-  };
+  const { provider, reasoningEffort } = agentProvider;
+  if (provider === "openai" || provider === "codex") {
+    return {
+      openai: {
+        reasoningEffort,
+        ...(agentProvider.serviceTier ? { serviceTier: agentProvider.serviceTier } : {}),
+        // Codex's Responses API uses `instructions` instead of a system message.
+        // We pass the same effective system (base + primer text) here so codex
+        // gets the primer too. `store: false` disables server-side conversation
+        // storage; we send full history each turn.
+        ...(provider === "codex" ? { store: false, instructions: effectiveSystem } : {}),
+      },
+    };
+  }
+  // xAI, OpenRouter and Ollama: the effort looked up for the model, if any.
+  if (!reasoningEffort) return undefined;
+  // On the Responses API the AI SDK sends `reasoning` only for model ids it
+  // knows as reasoning models, and forcing it would also turn the system
+  // message into a developer message.
+  if (provider === "openrouter") return { openai: { reasoningEffort, forceReasoning: true, systemMessageMode: "system" } };
+  return { openai: { reasoningEffort } };
 }
 
 function buildEffectiveSystemPrompt(systemPrompt, primerText, userInstructions = "") {

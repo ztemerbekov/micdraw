@@ -99,6 +99,8 @@ When no settings file exists, Mic Draw picks providers based on what it finds in
 
 Codex runs in OpenAI's Fast mode by default (the **Fast mode** switch in the agent settings): replies come sooner, but they use your ChatGPT plan 2.5x faster. For OpenAI and Codex the agent settings offer one model, GPT-6.1 Sol: GPT-6 Sol and GPT-6 Luna reply sooner, but their drawings fell short. A saved pick of either, or of a model Codex no longer serves (GPT-5.5 leaves it on 2026-10-14), switches to GPT-6.1 Sol on start, and a saved reasoning effort of `none`, which GPT-6.1 Sol rejects, switches to `low`.
 
+xAI, OpenRouter and Ollama models get the least thinking they accept, because a whiteboard edit needs little of it and thinking costs seconds every turn. On the first request with a model, Mic Draw asks the provider which reasoning efforts the model takes (xAI's `/v1/language-models`, OpenRouter's `/api/v1/models`, Ollama's `/api/show`) and sends the lowest: `none` on `grok-4.3` and Ollama models that can stop thinking, `low` on `grok-4.5` and later. A model whose thinking is off by default, such as OpenRouter's `x-ai/grok-4.20`, gets nothing, and so does a model the provider can't be asked about. If xAI's list can't be fetched, Grok models get the lowest value from xAI's docs. The server log names the effort chosen for each model. Measured through OpenRouter on one 174-word talk: `grok-4.3` took a median 3.3 s per turn with `none` against 6.2 s at its default, with no reasoning tokens instead of ~440. `grok-4.7` stays slow for live drawing even at `low`: its thinking grew with the board, to 14-84 s per turn and then the 90 s timeout, while at its default `high` it finished only two turns. xAI directly and Ollama haven't been verified live.
+
 Auto-detection precedence: **`OPENROUTER_API_KEY` wins over Codex CLI auth wins over `OLLAMA_MODEL` wins over `XAI_API_KEY` wins over `OPENAI_API_KEY`** for the agent. For transcription, **`DEEPGRAM_API_KEY` wins over `OPENAI_API_KEY` wins over `XAI_API_KEY`**, otherwise local. After first run, this auto-detection no longer applies - change providers from the in-app status panel.
 
 ### Environment variables
@@ -213,9 +215,10 @@ the field is free text because the catalogue changes faster than any list here c
 
 Two deliberate differences from the OpenAI provider:
 
-- **No `reasoningEffort` is sent.** It is an OpenAI-specific provider option; forwarding it to
-  an arbitrary OpenRouter model is ignored at best and a 400 at worst. The setting stays in the
-  OpenAI panel where it belongs.
+- **No reasoning effort from the OpenAI panel.** That setting is for GPT-6.1 Sol. OpenRouter
+  models get the lowest effort OpenRouter lists for them instead (see
+  [Defaults on first run](#defaults-on-first-run)); sending an arbitrary one is ignored at best
+  and a 400 at worst.
 - **Cost shows token volume, not dollars.** OpenRouter's per-model rates move independently of
   this repo, so the session cost card reports the tokens it measured and leaves the billing
   figure to your OpenRouter activity page rather than printing a confidently wrong number.
@@ -224,7 +227,7 @@ Two deliberate differences from the OpenAI provider:
 
 **xAI** works as an agent provider and as a speech engine, with one key for both (`apiKeys.xai`). It comes from [autopreso#24](https://github.com/kunchenguid/autopreso/pull/24) by Julien Talbot, who ran it against the live API. In Mic Draw it is checked against xAI's docs only and has not been verified live yet.
 
-- **Agent.** Pick **xAI** in the agent panel, paste the key and type a model id; the default is `grok-4.3`. Requests go to xAI's OpenAI-compatible Chat Completions API (`https://api.x.ai/v1`). As with OpenRouter, no `reasoningEffort` is sent. The session cost card prices the Grok models in its rate table and shows `n/a` for others.
+- **Agent.** Pick **xAI** in the agent panel, paste the key and type a model id; the default is `grok-4.3`. Requests go to xAI's OpenAI-compatible Chat Completions API (`https://api.x.ai/v1`). As with OpenRouter, the model gets the lowest reasoning effort it accepts rather than the OpenAI panel's setting. The session cost card prices the Grok models in its rate table and shows `n/a` for others.
 - **Speech.** Pick **xAI** in the Voice panel. It streams to `grok-voice-transcribe-2.0` over a WebSocket. xAI's Smart Turn decides when a thought is finished: a pause it is unsure about only settles a chunk, and after 1.2 s of silence the turn ends anyway. Text on the staging board becomes `keyterm` hints, as with Deepgram. Stop sends `finalize`, so the last words arrive before the turn is queued. Streaming costs $0.20 per hour of audio.
 
 ## Credits

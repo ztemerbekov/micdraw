@@ -39,10 +39,8 @@ export function resolveAgentProviderFromSettings({ settings, env = process.env }
       cleanEnvValue(env.OPENROUTER_API_KEY);
     if (!apiKey) throw new Error("OpenRouter API key is not configured. Add it in the agent settings.");
     // OpenRouter speaks the same `/responses` endpoint as the OpenAI path.
-    // Deliberately no `reasoningEffort`: it is an OpenAI-specific provider
-    // option, most OpenRouter models reject or ignore it, and
-    // createWhiteboardAgentProviderOptions already declines to send provider
-    // options for anything that is not openai/codex.
+    // No `reasoningEffort` from settings: the server looks up the lowest one
+    // the model accepts (src/reasoning-effort.js).
     return {
       provider: "openrouter",
       model: (settings.agent?.openrouter?.model ?? "").trim() || AGENT_DEFAULTS.openrouter.model,
@@ -56,7 +54,7 @@ export function resolveAgentProviderFromSettings({ settings, env = process.env }
   if (provider === "xai") {
     const apiKey = (settings.apiKeys?.xai ?? "").trim() || cleanEnvValue(env.XAI_API_KEY);
     if (!apiKey) throw new Error("xAI API key is not configured. Add it in the agent settings.");
-    // No `reasoningEffort`, as for OpenRouter: it is an OpenAI provider option.
+    // No `reasoningEffort` from settings, as for OpenRouter.
     return {
       provider: "xai",
       model: (settings.agent?.xai?.model ?? "").trim() || AGENT_DEFAULTS.xai.model,
