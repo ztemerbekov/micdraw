@@ -183,3 +183,13 @@ test("computeTranscriptionCost returns priced=false for local models", () => {
     reason: "local",
   });
 });
+
+test("computeAgentCost prices the GPT-6 models offered in the OpenAI menu", () => {
+  // OpenAI standard rates per 1M tokens, October 2026:
+  // gpt-6-luna $0.10 / $0.01 cached / $0.50 output; gpt-6-sol $2.00 / $0.20 / $10.00;
+  // gpt-6.1-sol $2.00 / $0.10 / $10.00.
+  const usage = { input: 2_000_000, cached: 1_000_000, output: 1_000_000, reasoning: 0 };
+  assert.equal(computeAgentCost({ provider: "openai", model: "gpt-6-luna", usage }).cost.toFixed(6), (0.10 + 0.01 + 0.50).toFixed(6));
+  assert.equal(computeAgentCost({ provider: "openai", model: "gpt-6-sol", usage }).cost.toFixed(6), (2.00 + 0.20 + 10.00).toFixed(6));
+  assert.equal(computeAgentCost({ provider: "openai", model: "gpt-6.1-sol", usage }).cost.toFixed(6), (2.00 + 0.10 + 10.00).toFixed(6));
+});

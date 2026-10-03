@@ -2,8 +2,10 @@ import { createOpenAI } from "@ai-sdk/openai";
 
 import { DEFAULT_CODEX_BASE_URL, createCodexFetch, readCodexCliAuthSync } from "./codex-auth.js";
 
-const DEFAULT_OPENAI_AGENT_MODEL = "gpt-5.5";
-const DEFAULT_CODEX_AGENT_MODEL = "gpt-5.5-fast";
+// GPT-6 Luna started drawing sooner than GPT-5.5 on replayed real turns, at
+// comparable quality (issue #24). GPT-5.5 leaves Codex on 2026-10-14.
+const DEFAULT_OPENAI_AGENT_MODEL = "gpt-6-luna";
+const DEFAULT_CODEX_AGENT_MODEL = "gpt-6-luna-fast";
 const DEFAULT_OPENAI_REASONING_EFFORT = "low";
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1";
