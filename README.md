@@ -152,7 +152,7 @@ sherpa-onnx models download once, on first use, from Hugging Face at a pinned co
 | Kroko Spanish streaming zipformer | 156 MB | CC-BY-SA (Kroko community model) | [Banafo/Kroko-ASR](https://huggingface.co/Banafo/Kroko-ASR), packaged for sherpa-onnx as [csukuangfj/sherpa-onnx-streaming-zipformer-es-kroko-2025-08-06](https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-es-kroko-2025-08-06) |
 | Zipformer small CTC Mandarin, int8 | 26 MB | Apache-2.0 | [csukuangfj/icefall-streaming-zipformer-small-ctc-zh-2025-04-01](https://huggingface.co/csukuangfj/icefall-streaming-zipformer-small-ctc-zh-2025-04-01), packaged for sherpa-onnx as [csukuangfj/sherpa-onnx-streaming-zipformer-small-ctc-zh-int8-2025-04-01](https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-small-ctc-zh-int8-2025-04-01) |
 
-Moonshine runs as a native sidecar on `darwin-arm64` and `darwin-x64`. For now these are the sidecar builds published by autopreso (`@autopreso/moonshine-darwin-*`).
+Moonshine runs as a native sidecar on `darwin-arm64` and `darwin-x64`, installed with Mic Draw as the optional package `@micdraw/moonshine-darwin-arm64` or `@micdraw/moonshine-darwin-x64`.
 
 ## Languages in the cloud
 

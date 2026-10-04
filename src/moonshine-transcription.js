@@ -4,13 +4,12 @@ import path from "node:path";
 
 const require = createRequire(import.meta.url);
 const SAMPLE_RATE = 24000;
-// Local Moonshine runs from the sidecar builds that autopreso publishes to npm.
-// Switch these names when micdraw publishes its own @micdraw/moonshine-* packages.
+// The optional sidecar packages built from packages/ (CONTRIBUTING.md).
 const SIDECAR_PACKAGE_BY_PLATFORM = new Map([
-  ["darwin:arm64", "@autopreso/moonshine-darwin-arm64"],
-  ["darwin:x64", "@autopreso/moonshine-darwin-x64"],
+  ["darwin:arm64", "@micdraw/moonshine-darwin-arm64"],
+  ["darwin:x64", "@micdraw/moonshine-darwin-x64"],
 ]);
-const SIDECAR_BINARY_NAME = "autopreso-moonshine";
+const SIDECAR_BINARY_NAME = "micdraw-moonshine";
 
 export function moonshinePlatformPackageName(platform = process.platform, arch = process.arch) {
   const packageName = SIDECAR_PACKAGE_BY_PLATFORM.get(`${platform}:${arch}`);

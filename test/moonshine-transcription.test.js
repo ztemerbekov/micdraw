@@ -11,8 +11,8 @@ import {
 } from "../src/moonshine-transcription.js";
 
 test("moonshinePlatformPackageName supports both macOS binary variants", () => {
-  assert.equal(moonshinePlatformPackageName("darwin", "arm64"), "@autopreso/moonshine-darwin-arm64");
-  assert.equal(moonshinePlatformPackageName("darwin", "x64"), "@autopreso/moonshine-darwin-x64");
+  assert.equal(moonshinePlatformPackageName("darwin", "arm64"), "@micdraw/moonshine-darwin-arm64");
+  assert.equal(moonshinePlatformPackageName("darwin", "x64"), "@micdraw/moonshine-darwin-x64");
 });
 
 test("moonshinePlatformPackageName rejects unsupported platforms", () => {
@@ -26,11 +26,11 @@ test("resolveMoonshineSidecarPath resolves the binary inside the optional packag
   const resolved = resolveMoonshineSidecarPath({
     platform: "darwin",
     arch: "arm64",
-    requireResolve: () => "/workspace/node_modules/@autopreso/moonshine-darwin-arm64/package.json",
+    requireResolve: () => "/workspace/node_modules/@micdraw/moonshine-darwin-arm64/package.json",
   });
 
   // Compared with the host's separators: on Windows path.join writes backslashes.
-  assert.equal(resolved, path.normalize("/workspace/node_modules/@autopreso/moonshine-darwin-arm64/bin/autopreso-moonshine"));
+  assert.equal(resolved, path.normalize("/workspace/node_modules/@micdraw/moonshine-darwin-arm64/bin/micdraw-moonshine"));
 });
 
 test("resolveMoonshineSidecarPath prefers an explicit binary override", () => {
