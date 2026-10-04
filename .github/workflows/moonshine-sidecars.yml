@@ -2,8 +2,11 @@ name: Moonshine sidecars
 
 # Builds the macOS Moonshine sidecar binaries for arm64 and x64. The build
 # script smoke-tests each binary: it must load the medium English model and
-# report that it is ready. Nothing is published yet: the @micdraw packages
-# need their first publish and npm trust first (#55).
+# report that it is ready. A manual run on main then publishes both
+# @micdraw/moonshine-darwin-* packages to npm, unless npm already has their
+# version. npm trusts this workflow by its file name (trusted publishing), so
+# the repo holds no npm token, and renaming this file breaks publishing until
+# the trust on npm is updated.
 on:
   pull_request:
     paths:
@@ -43,3 +46,38 @@ jobs:
           name: moonshine-sidecar-${{ matrix.target }}
           path: packages/moonshine-darwin-*/bin/micdraw-moonshine
           retention-days: 7
+
+  # Runs only after both builds pass, so npm gets both packages or neither.
+  publish:
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      # Each artifact holds moonshine-darwin-<arch>/bin/micdraw-moonshine.
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: moonshine-sidecar-*
+          merge-multiple: true
+          path: packages
+      - run: chmod +x packages/moonshine-darwin-*/bin/micdraw-moonshine
+      # npm refuses to publish a version twice, so a run without a version
+      # bump publishes nothing.
+      - name: Publish the versions npm does not have yet
+        run: |
+          for dir in packages/moonshine-darwin-*; do
+            name="$(node -p "require('./$dir/package.json').name")"
+            version="$(node -p "require('./$dir/package.json').version")"
+            if npm view "$name@$version" version > /dev/null 2>&1; then
+              echo "$name@$version is already on npm."
+            else
+              npm publish "./$dir"
+            fi
+          done
