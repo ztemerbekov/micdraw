@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.4 (2026-10-04)
 
 - The "Start Preso" button is now "Go Live", and the Staging / Preso toggle is Staging / Live, so the last of autopreso's "preso" is gone from the page (#20). The page's own routes moved from `/api/preso/*` to `/api/live/*` (#94).
 - Local Moonshine on macOS runs Mic Draw's own sidecar, `@micdraw/moonshine-darwin-arm64` or `-x64` 0.1.1, built in this repository's CI from Moonshine 0.0.59, instead of autopreso's `@autopreso/moonshine-darwin-*` (#55).

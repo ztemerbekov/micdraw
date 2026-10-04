@@ -1,6 +1,6 @@
 {
   "name": "micdraw",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Speak, and a live Excalidraw whiteboard draws your talk in real time.",
   "license": "MIT",
   "author": "Mic Draw contributors",
