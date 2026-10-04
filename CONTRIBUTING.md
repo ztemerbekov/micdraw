@@ -25,6 +25,14 @@ Maintainers release in two steps:
 1. A pull request runs `npm version X.Y.Z --no-git-tag-version` and renames `## Unreleased` in `CHANGELOG.md` to `## X.Y.Z (YYYY-MM-DD)`.
 2. After it merges, publish a GitHub Release with the tag `vX.Y.Z` on `main` and that changelog section as its notes. `.github/workflows/release.yml` checks the tag against `package.json`, runs the checks and publishes the package to npm. Then it installs the published version with `npx` on Linux, macOS and Windows and runs `micdraw --help` (`.github/workflows/check-published-package.yml`).
 
+### Moonshine sidecars
+
+The macOS Moonshine sidecars are separate npm packages, `@micdraw/moonshine-darwin-arm64` and `@micdraw/moonshine-darwin-x64`, with one version of their own:
+
+1. A pull request sets the new version in both `packages/moonshine-darwin-*/package.json`.
+2. After it merges, run the Moonshine sidecars workflow on `main` (Actions → Moonshine sidecars → Run workflow). `.github/workflows/moonshine-sidecars.yml` builds both binaries, checks that each loads the medium English model, and publishes the packages whose version npm does not have yet.
+3. A pull request points `optionalDependencies` in `package.json` at the new version. npm can lock only a version it already serves, so this comes after the publish.
+
 ## Questions
 
 Open an issue.
