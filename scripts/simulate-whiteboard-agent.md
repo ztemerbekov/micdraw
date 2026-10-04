@@ -92,6 +92,7 @@ Each run writes:
 - `trajectory.jsonl`
 - `final-elements.json`
 - `screenshots/*.png`
+- `settings.json`, the throwaway settings the page saved; your own `~/.config/micdraw` is left alone
 
 Useful options:
 
