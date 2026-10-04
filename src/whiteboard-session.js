@@ -42,9 +42,9 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
     warmupBusy: false,
     latestScreenshot: undefined,
     // Snapshot of the user's free-form "Agent instructions" textarea taken at
-    // /api/preso/start. Frozen for the duration of the preso so the cached
-    // system-prompt prefix the warmup loop primes stays stable; mid-preso edits
-    // to the textarea only take effect on the next Start Preso.
+    // /api/live/start. Frozen for the whole live session so the cached
+    // system-prompt prefix the warmup loop primes stays stable; edits to the
+    // textarea while live only take effect on the next Go Live.
     agentInstructions: "",
     warmupPromise: Promise.resolve(),
     // Snapshot of the warmup loop state, also broadcast to clients via WS.
@@ -132,7 +132,7 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
     state.latestScreenshot = undefined;
     state.cost.reset();
   };
-  state.startPreso = ({ primerMessage, agentInstructions = "" }) => {
+  state.goLive = ({ primerMessage, agentInstructions = "" }) => {
     state.endSession();
     state.mode = "live";
     state.elements = seedElements();
@@ -142,7 +142,7 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
     state.warmupPromise = Promise.resolve();
     state.canvasDirtyForAgent = false;
     state.cost.reset();
-    // Reset warmup state for this preso. The startWarmupLoop call that follows
+    // Reset warmup state for this live session. The startWarmupLoop call that follows
     // will publish the first "running" broadcast.
     state.warmupState = { state: "idle", attempt: 0, maxAttempts: DEFAULT_WARMUP_MAX_ATTEMPTS };
   };

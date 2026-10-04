@@ -348,7 +348,7 @@ export function createDeepgramTranscription({
     activeKeyterms = next;
     log.debug?.(`[deepgram-transcription] keyterms set (${next.length} term(s))`);
     // Keyterms live in the connect URL, so changing them means a new socket.
-    // This only ever happens between sessions (preso start / back to staging /
+    // This only ever happens between sessions (Go Live / back to staging /
     // reset), when no audio is in flight, so a reconnect costs nothing.
     if (!socket) return;
     const previous = socket;

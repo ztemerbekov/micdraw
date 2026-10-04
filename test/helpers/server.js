@@ -54,9 +54,9 @@ export async function startTestServer(t, overrides = {}) {
   return { ...server, transcription };
 }
 
-/** POSTs `body` to /api/preso/start. */
-export function startPreso(url, body) {
-  return fetch(`${url}/api/preso/start`, {
+/** POSTs `body` to /api/live/start. */
+export function goLive(url, body) {
+  return fetch(`${url}/api/live/start`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),

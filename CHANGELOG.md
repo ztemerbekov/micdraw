@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The "Start Preso" button is now "Go Live", and the Staging / Preso toggle is Staging / Live, so the last of autopreso's "preso" is gone from the page (#20). The page's own routes moved from `/api/preso/*` to `/api/live/*` (#94).
+
 ## 0.2.3 (2026-10-04)
 
 - The OpenAI API key field in the agent and voice settings no longer disappears after the first typed character when no key is saved yet.

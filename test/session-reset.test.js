@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { openWs, startPreso, startTestServer, waitForMessage } from "./helpers/server.js";
+import { goLive, openWs, startTestServer, waitForMessage } from "./helpers/server.js";
 
 test("POST /api/session/reset restores starter whiteboard and clears agent history", async (t) => {
   const { url, state } = await startTestServer(t);
@@ -37,7 +37,7 @@ test("session reset broadcasts the starter whiteboard to connected websocket cli
 
 test("POST /api/session/reset clears transcription vocabulary context", async (t) => {
   const { url, transcription } = await startTestServer(t);
-  const startRes = await startPreso(url, {
+  const startRes = await goLive(url, {
     stagingElements: [{ type: "text", id: "t1", text: "Kafka consumer group" }],
     stagingScreenshot: "data:image/png;base64,c3RhZ2luZw==",
   });

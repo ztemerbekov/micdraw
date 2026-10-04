@@ -116,15 +116,15 @@ export async function startServer(options) {
     res.json({ ok: true });
   });
 
-  app.post("/api/preso/start", async (req, res) => {
+  app.post("/api/live/start", async (req, res) => {
     const { stagingElements, stagingScreenshot } = req.body ?? {};
     if (!Array.isArray(stagingElements)) {
       return res.status(400).json({ error: "stagingElements (array) is required." });
     }
     // Snapshot the user's free-form Agent instructions at start so the cached
-    // system-prompt prefix stays stable for the whole preso. Edits made to
-    // the textarea after Start Preso land on disk but only take effect on the
-    // next Start Preso.
+    // system-prompt prefix stays stable for the whole live session. Edits made
+    // to the textarea after Go Live land on disk but only take effect on the
+    // next Go Live.
     let settings;
     try {
       settings = options.settingsStore ? await options.settingsStore.load() : null;
@@ -135,9 +135,9 @@ export async function startServer(options) {
     const agentInstructions = typeof settings?.agentInstructions === "string" ? settings.agentInstructions : "";
     const primerMessage = buildStagingPrimerMessage({ stagingElements, stagingScreenshot });
     const keywords = extractWhiteboardKeywords(stagingElements);
-    console.log(`[micdraw] preso/start: ${keywords.length} staging keyword(s) for transcription bias`);
+    console.log(`[micdraw] live/start: ${keywords.length} staging keyword(s) for transcription bias`);
     transcription.setSessionContext({ keywords });
-    state.startPreso({ primerMessage, agentInstructions });
+    state.goLive({ primerMessage, agentInstructions });
     state.startWarmupLoop({
       runOnce: ({ attempt }) =>
         runWhiteboardWarmupOnce({
@@ -165,12 +165,12 @@ export async function startServer(options) {
     res.json({ ok: true });
   });
 
-  app.post("/api/preso/warmup/cancel", (_req, res) => {
+  app.post("/api/live/warmup/cancel", (_req, res) => {
     state.cancelWarmup();
     res.json({ ok: true });
   });
 
-  app.post("/api/preso/back-to-staging", (_req, res) => {
+  app.post("/api/live/back-to-staging", (_req, res) => {
     state.backToStaging();
     transcription.setSessionContext({ keywords: [] });
     broadcast(wss, { type: "mode", mode: state.mode });
@@ -577,7 +577,7 @@ function prepareAgentPrompt(state, agentProvider, messages) {
 
 export async function runWhiteboardAgent({ transcript, state, wss, options, generateTextFn = generateText, streamTextFn = streamText }) {
   // Capture the session at turn start. If the user clicks Stop / Back to
-  // staging / Reset / Start preso while we're in flight, mySession.active
+  // staging / Reset / Go Live while we're in flight, mySession.active
   // flips to false. Tool execute and the post-turn agentHistory update both
   // check this and become no-ops, so late LLM responses can't mutate the
   // canvas or contaminate the next session's history. Cost recording does

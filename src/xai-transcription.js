@@ -226,7 +226,7 @@ export function createXaiTranscription({
     activeKeyterms = next;
     log.debug?.(`[xai-transcription] keyterms set (${next.length} term(s))`);
     // Keyterms live in the connect URL, so a change needs a new socket. It
-    // happens between sessions (preso start, back to staging, reset), with no
+    // happens between sessions (Go Live, back to staging, reset), with no
     // audio in flight.
     if (!socket) return;
     const previous = socket;
