@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { WebSocket } from "ws";
 
 import { DEFAULT_AGENT_TIMEOUT_MS, runWhiteboardAgent, startServer, whiteboardSystemPrompt } from "../src/server.js";
-import { openWs, startTestServer, withTimeout, wsUrl } from "./helpers/server.js";
+import { openWs, startTestServer, withTimeout, wsBarrier, wsUrl } from "./helpers/server.js";
 
 const CODEX_AGENT_PROVIDER = {
   provider: "codex",
@@ -105,13 +105,14 @@ test("websocket screenshot messages update agent visual context", async (t) => {
   await withTimeout(generateTextStarted, "the agent turn");
 });
 
-test("websocket stop makes synchronous transcript flush stale", async (t) => {
+test("Stop draws the phrase the engine flushes as it stops", async (t) => {
   let generateCalled = false;
   let resolveStopCalled;
   const stopCalled = new Promise((resolve) => {
     resolveStopCalled = resolve;
   });
   const { url, state } = await startTestServer(t, {
+    stopDrainMs: 0,
     createTranscription: ({ queueTranscript }) => ({
       ready: async () => {},
       sendAudio: () => {},
@@ -132,7 +133,120 @@ test("websocket stop makes synchronous transcript flush stale", async (t) => {
   ws.send(JSON.stringify({ type: "stop" }));
   await withTimeout(stopCalled, "transcription stop");
   await state.idle();
-  assert.equal(generateCalled, false);
+  assert.equal(generateCalled, true);
+});
+
+/**
+ * A server whose agent turn starts, then waits for `releaseTurn()` before it
+ * draws a "gateway" rectangle, the way a slow model is still writing its edit
+ * when the speaker clicks Stop.
+ */
+async function startServerWithHeldTurn(t) {
+  let releaseTurn;
+  const turnGate = new Promise((resolve) => {
+    releaseTurn = resolve;
+  });
+  let resolveTurnStarted;
+  const turnStarted = new Promise((resolve) => {
+    resolveTurnStarted = resolve;
+  });
+  const server = await startTestServer(t, {
+    stopDrainMs: 0,
+    generateTextFn: async ({ tools }) => {
+      resolveTurnStarted();
+      await turnGate;
+      await tools.whiteboard_apply.execute({
+        operations: [{ type: "insert_after", line: 0, element: { type: "rectangle", id: "gateway", x: 0, y: 0, width: 160, height: 80 } }],
+      });
+      return { text: "DONE", finishReason: "stop" };
+    },
+  });
+  server.state.mode = "live";
+  const ws = await openWs(server.url);
+  ws.send(JSON.stringify({ type: "audio:start", sessionId: "listening-1" }));
+  await wsBarrier(ws);
+  server.state.queueTranscript("The browser talks to an API gateway.");
+  await withTimeout(turnStarted, "the agent turn");
+  return { ...server, ws, releaseTurn };
+}
+
+test("Stop lets the agent finish the turn in flight", async (t) => {
+  const { state, ws, releaseTurn } = await startServerWithHeldTurn(t);
+
+  ws.send(JSON.stringify({ type: "stop", sessionId: "listening-1" }));
+  await wsBarrier(ws);
+  releaseTurn();
+  await state.idle();
+
+  assert.deepEqual(state.elements.map((element) => element.id), ["gateway"]);
+});
+
+test("Reset while Stop is finishing still drops the edit in flight", async (t) => {
+  const { url, state, ws, releaseTurn } = await startServerWithHeldTurn(t);
+
+  ws.send(JSON.stringify({ type: "stop", sessionId: "listening-1" }));
+  await wsBarrier(ws);
+  const res = await fetch(`${url}/api/session/reset`, { method: "POST" });
+  assert.equal(res.status, 200);
+  releaseTurn();
+  await state.idle();
+
+  assert.deepEqual(state.elements, []);
+});
+
+test("Stop ends the session once the queued turns finish", async (t) => {
+  const { state, ws, releaseTurn } = await startServerWithHeldTurn(t);
+  const listeningSession = state.session;
+
+  ws.send(JSON.stringify({ type: "stop", sessionId: "listening-1" }));
+  await wsBarrier(ws);
+  assert.equal(listeningSession.active, true, "the session stays open while the turn draws");
+  releaseTurn();
+  await state.idle();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(listeningSession.active, false);
+  assert.notEqual(state.session, listeningSession);
+});
+
+test("A hand edit while Stop is finishing drops the agent's edit in flight", async (t) => {
+  const { state, ws, releaseTurn } = await startServerWithHeldTurn(t);
+  const handDrawn = { type: "rectangle", id: "hand-drawn", x: 400, y: 0, width: 120, height: 60 };
+
+  // The agent's edit was written against the board before this hand edit,
+  // so its line numbers no longer point at the same elements.
+  ws.send(JSON.stringify({ type: "stop", sessionId: "listening-1" }));
+  ws.send(JSON.stringify({ type: "whiteboard:user-elements", elements: [handDrawn] }));
+  await wsBarrier(ws);
+  releaseTurn();
+  await state.idle();
+
+  assert.deepEqual(state.elements, [handDrawn]);
+});
+
+test("Stop does not send a lone filler word to the agent", async (t) => {
+  let generateCalls = 0;
+  const { url, state } = await startTestServer(t, {
+    stopDrainMs: 0,
+    createTranscription: ({ queueTranscript }) => ({
+      ready: async () => {},
+      sendAudio: () => {},
+      stop: () => queueTranscript("um"),
+      close: () => {},
+    }),
+    generateTextFn: async () => {
+      generateCalls += 1;
+      return { text: "DONE", finishReason: "stop" };
+    },
+  });
+
+  state.mode = "live";
+  const ws = await openWs(url);
+  ws.send(JSON.stringify({ type: "stop" }));
+  await wsBarrier(ws);
+  await state.idle();
+
+  assert.equal(generateCalls, 0);
 });
 
 test("runWhiteboardAgent rejects with a timeout instead of hanging forever", async () => {

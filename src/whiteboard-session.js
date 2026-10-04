@@ -86,6 +86,8 @@ export function createWhiteboardSession({ options, wss, runAgent }) {
     isReady: (text) => !isTrivialTranscript(text),
     runTurn: async (transcript) => {
       if (state.mode !== "live") return;
+      // idle(), which Stop waits on, pushes through a buffer of fillers alone.
+      if (isTrivialTranscript(transcript)) return;
       // Capture the session at the moment the turn begins. If endSession()
       // fires while we're awaiting warmup or the agent call, mySession.active
       // flips to false and we bail without mutating anything.
