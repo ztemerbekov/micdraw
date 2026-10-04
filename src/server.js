@@ -34,6 +34,9 @@ import { XAI_STT_MODEL, createXaiTranscription as createDefaultXaiTranscription 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, "..", "public");
 export const DEFAULT_AGENT_TIMEOUT_MS = 90_000;
+// How long Stop waits for the engine's last phrase before it waits for the
+// queued turns. Deepgram and xAI give theirs up to 800 ms after stop.
+export const DEFAULT_STOP_DRAIN_MS = 3_500;
 // The largest messages the page sends are viewport screenshots, downscaled PNGs.
 export const MAX_WS_PAYLOAD_BYTES = 10 * 1024 * 1024;
 
@@ -73,6 +76,17 @@ export async function startServer(options) {
     queueTranscript: (transcript) => state.queueTranscript(transcript),
     state,
   });
+
+  // Stop ends listening, not what the speaker has already said: the engine's
+  // last phrase and the turns still queued or drawing finish first, then the
+  // session ends. Reset, back to staging and Go Live end it at once; a session
+  // they have replaced is left alone. Ported from upstream autopreso#24.
+  async function finishStoppedSession(sessionToEnd) {
+    const drainMs = options.stopDrainMs ?? DEFAULT_STOP_DRAIN_MS;
+    if (drainMs > 0) await new Promise((resolve) => setTimeout(resolve, drainMs).unref());
+    await state.idle();
+    if (state.session === sessionToEnd) state.endSession();
+  }
 
   // Saves a settings patch and switches engines in the background if needed
   // (applyInBackground). Returns what pages may see: never the API keys.
@@ -234,9 +248,10 @@ export async function startServer(options) {
 
       if (message.type === "stop") {
         if (isActiveAudioSession(message.sessionId)) {
+          const sessionToEnd = state.session;
           transcription.stop();
           activeAudioSessionId = null;
-          state.endSession();
+          finishStoppedSession(sessionToEnd).catch((error) => console.error("Finishing the stopped session failed:", error));
         }
       }
 
@@ -249,10 +264,13 @@ export async function startServer(options) {
       }
 
       if (message.type === "whiteboard:user-elements" && Array.isArray(message.elements)) {
-        // The user can draw on the live canvas before clicking Start listening
-        // (and during it). Frontend pushes the current scene here so the next
-        // transcript turn has fresh elements available to the agent.
+        // The user can draw on the live canvas while listening is off. The
+        // frontend pushes the current scene here so the next transcript turn
+        // has fresh elements available to the agent. An agent edit still on
+        // its way, such as one Stop let finish, was written against the board
+        // before this edit, so the session ends and that edit is dropped.
         if (state.mode === "live") {
+          state.endSession();
           state.elements = message.elements;
         }
       }
@@ -576,11 +594,12 @@ function prepareAgentPrompt(state, agentProvider, messages) {
 }
 
 export async function runWhiteboardAgent({ transcript, state, wss, options, generateTextFn = generateText, streamTextFn = streamText }) {
-  // Capture the session at turn start. If the user clicks Stop / Back to
-  // staging / Reset / Go Live while we're in flight, mySession.active
-  // flips to false. Tool execute and the post-turn agentHistory update both
-  // check this and become no-ops, so late LLM responses can't mutate the
-  // canvas or contaminate the next session's history. Cost recording does
+  // Capture the session at turn start. If the user clicks Back to staging /
+  // Reset / Go Live while we're in flight, mySession.active flips to false
+  // (Stop lets the turn finish first). Tool execute and the post-turn
+  // agentHistory update both check this and become no-ops, so late LLM
+  // responses can't mutate the canvas or contaminate the next session's
+  // history. Cost recording does
   // NOT consult this - we paid for the tokens regardless.
   // (Tests/scaffolds without a session token are treated as always-active.)
   const mySession = state.session ?? { active: true };

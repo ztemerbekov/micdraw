@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Stop no longer drops what you just said. The agent finishes the edit it is drawing when you click Stop, where before that edit was thrown away, and the phrase the speech engine hands over as listening stops is drawn too: with OpenAI Realtime, a Stop within a second of the last words used to lose that phrase. Stop gives the engine up to 3.5 s for its last phrase, then waits for the queued turns. Reset, back to staging and Go Live still cancel at once, and so does an edit of your own on the board, because the agent's remaining edits were written against the board before it. Ported from autopreso#24 by Julien Talbot (#69).
+
 ## 0.2.4 (2026-10-04)
 
 - The "Start Preso" button is now "Go Live", and the Staging / Preso toggle is Staging / Live, so the last of autopreso's "preso" is gone from the page (#20). The page's own routes moved from `/api/preso/*` to `/api/live/*` (#94).

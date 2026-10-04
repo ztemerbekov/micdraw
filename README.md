@@ -58,6 +58,7 @@ Then, in the browser:
 - **Local server** - the Express + WebSocket server binds to 127.0.0.1 and only answers its own page. Requests from other sites open in your browser are rejected.
 - **Persistent settings** - models, API keys, STT engine choices, and Agent instructions live in `~/.config/micdraw/settings.json` and survive restarts.
 - **Warmup loop** - after you hit start the agent primes itself against your staging content and Agent instructions so the first sentence you say doesn't get a cold model.
+- **Stop** - ends listening, not the drawing: the agent finishes the edit it is drawing, and the speech engine's last phrase, which it has up to 3.5 seconds to deliver, is drawn too. Reset, back to staging and an edit of your own on the board cancel what the agent has not drawn yet.
 
 ## CLI Reference
 
