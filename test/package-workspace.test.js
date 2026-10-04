@@ -18,10 +18,12 @@ test("root package keeps platform sidecars as optional published packages, not l
   assert.equal(rootPackage.scripts["build:moonshine-sidecars"], "node ./scripts/build-moonshine-sidecars.js");
   assert.equal(rootPackage.workspaces, undefined);
 
-  // Until micdraw publishes its own sidecars, the root package installs the
-  // upstream autopreso builds.
-  assert.ok(rootPackage.optionalDependencies["@autopreso/moonshine-darwin-arm64"]);
-  assert.ok(rootPackage.optionalDependencies["@autopreso/moonshine-darwin-x64"]);
+  // Both sidecars come from packages/ at one version. A new sidecar version
+  // is published before the root package can depend on it, so this version
+  // may trail the one in packages/ (CONTRIBUTING.md).
+  const sidecars = rootPackage.optionalDependencies;
+  assert.deepEqual(Object.keys(sidecars), ["@micdraw/moonshine-darwin-arm64", "@micdraw/moonshine-darwin-x64"]);
+  assert.equal(sidecars["@micdraw/moonshine-darwin-arm64"], sidecars["@micdraw/moonshine-darwin-x64"]);
 });
 
 test("package.json, package-lock.json and the changelog agree on the version", () => {
@@ -33,6 +35,18 @@ test("package.json, package-lock.json and the changelog agree on the version", (
   assert.equal(lock.packages[""].version, version);
   // A release PR turns "## Unreleased" into the section of the version it publishes.
   assert.match(changelog, new RegExp(`^## ${version.replaceAll(".", "\\.")} \\(\\d{4}-\\d{2}-\\d{2}\\)$`, "m"));
+});
+
+test("package-lock.json pins every optional sidecar", () => {
+  const { optionalDependencies } = readJson("package.json");
+  const lock = readJson("package-lock.json");
+
+  // npm drops an optional dependency it can't resolve, such as a version
+  // published minutes ago that its metadata cache hasn't seen, and still
+  // reports success. The lock file then installs no sidecar at all.
+  for (const [name, version] of Object.entries(optionalDependencies)) {
+    assert.equal(lock.packages[`node_modules/${name}`]?.version, version, `${name}@${version} is missing from package-lock.json`);
+  }
 });
 
 test("Moonshine sidecar packages share one version", () => {
