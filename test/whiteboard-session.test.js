@@ -41,7 +41,7 @@ test("session token starts active and bumps to a new active token on endSession(
   assert.equal(session.session.active, true);
 });
 
-test("startPreso, backToStaging, and reset all end the prior session", () => {
+test("goLive, backToStaging, and reset all end the prior session", () => {
   const session = createWhiteboardSession({
     options: {},
     wss: { clients: new Set() },
@@ -49,7 +49,7 @@ test("startPreso, backToStaging, and reset all end the prior session", () => {
   });
 
   let prev = session.session;
-  session.startPreso({ primerMessage: { role: "user", content: "primer" } });
+  session.goLive({ primerMessage: { role: "user", content: "primer" } });
   assert.equal(prev.active, false);
   assert.notEqual(session.session, prev);
 

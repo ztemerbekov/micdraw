@@ -34,7 +34,7 @@ Then, in the browser:
 
 1. Drop reference materials onto the staging canvas (title, agenda, etc).
 2. Pick your microphone, transcription model, agent model, and optional Agent instructions.
-3. Click "Start Preso" and start talking.
+3. Click "Go Live" and start talking.
 
 ## How It Works
 
@@ -78,8 +78,8 @@ From a source checkout, `npm start` runs the same command.
 ## Configuration
 
 Settings persist at `~/.config/micdraw/settings.json` and are managed from the in-app status panel.
-Agent instructions are saved automatically from staging, can be up to 100,000 characters, and take effect on the next Start Preso.
-The live Session cost card estimates agent token costs and OpenAI Realtime audio costs for the current presentation, resetting on Start Preso or session reset.
+Agent instructions are saved automatically from staging, can be up to 100,000 characters, and take effect on the next Go Live.
+The live Session cost card estimates agent token costs and OpenAI Realtime audio costs for the current presentation, resetting on Go Live or session reset.
 OpenAI prices use the built-in October 2026 rate table; local providers show `$0.0000`, Codex shows token volume because it routes through your subscription, and unknown models show `n/a`.
 
 ### Defaults on first run
@@ -175,7 +175,7 @@ browser is only ever told *whether* one is configured.
 never seen gets spelled the way you spell it. Two sources are merged:
 
 - the comma-separated **Key terms** field in the STT panel (`transcription.deepgram.keyterms`),
-- every text element on the staging canvas, picked up automatically at Start Preso.
+- every text element on the staging canvas, picked up automatically at Go Live.
 
 So putting your product names and jargon on the staging board is already enough to bias the
 transcript. Key terms are part of the connection URL, so changing them reconnects the socket;

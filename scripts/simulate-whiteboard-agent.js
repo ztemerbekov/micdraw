@@ -19,7 +19,7 @@ import {
 } from "./lib/chrome-cdp.js";
 import { resolveSimulatorAgentProvider } from "./lib/simulator-agent-provider.js";
 import { parseSimulatorArgs } from "./lib/simulator-options.js";
-import { FAKE_MICROPHONE_ARGS, startPresoAndListen } from "./lib/simulator-page.js";
+import { FAKE_MICROPHONE_ARGS, goLiveAndListen } from "./lib/simulator-page.js";
 import { startServer, whiteboardSystemPrompt } from "../src/server.js";
 import { createSettingsStore } from "../src/settings-store.js";
 import { chunkTranscriptAtPunctuation } from "./lib/transcript-chunker.js";
@@ -84,7 +84,7 @@ export async function runSimulation(options, agentProvider) {
       port: options.port,
       moonshineModel: "medium",
       agentProvider,
-      // Start Preso saves the agent instructions first, so the page needs a
+      // Go Live saves the agent instructions first, so the page needs a
       // store. A throwaway one keeps the simulator off ~/.config/micdraw.
       settingsStore: createSettingsStore({ filePath: path.join(outDir, "settings.json"), env: {}, readCodexAuth: () => null }),
       agentTimeoutMs: options.agentTimeoutMs,
@@ -112,7 +112,7 @@ export async function runSimulation(options, agentProvider) {
     await cdp.request("Page.enable");
     await cdp.request("Runtime.enable");
     await cdp.request("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
-    await startPresoAndListen(cdp);
+    await goLiveAndListen(cdp);
     scheduleScreenshot("initial");
 
     observer = await connectObserver(server.url, (message) => {

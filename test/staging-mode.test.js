@@ -3,14 +3,14 @@ import { test } from "node:test";
 import { WebSocket } from "ws";
 
 import { MAX_AGENT_INSTRUCTIONS_CHARS } from "../src/settings-store.js";
-import { openWs, startPreso, startTestServer, waitForMessage, withTimeout, wsBarrier, wsUrl } from "./helpers/server.js";
+import { goLive, openWs, startTestServer, waitForMessage, withTimeout, wsBarrier, wsUrl } from "./helpers/server.js";
 
 const SAMPLE_STAGING_ELEMENTS = [
   { type: "text", id: "ref-title", x: 0, y: 0, text: "Reference notes" },
   { type: "rectangle", id: "ref-card", x: 0, y: 40, width: 200, height: 80 },
 ];
 const SAMPLE_SCREENSHOT = "data:image/png;base64,c3RhZ2luZw==";
-const SAMPLE_PRESO = { stagingElements: SAMPLE_STAGING_ELEMENTS, stagingScreenshot: SAMPLE_SCREENSHOT };
+const SAMPLE_GO_LIVE_BODY = { stagingElements: SAMPLE_STAGING_ELEMENTS, stagingScreenshot: SAMPLE_SCREENSHOT };
 
 test("session starts in staging mode by default", async (t) => {
   const { state } = await startTestServer(t);
@@ -23,13 +23,13 @@ test("WebSocket clients receive mode on connect", async (t) => {
   assert.equal(modeMsg.mode, "staging");
 });
 
-test("POST /api/preso/start flips to live, primes agentHistory, blanks the live canvas", async (t) => {
+test("POST /api/live/start flips to live, primes agentHistory, blanks the live canvas", async (t) => {
   const { url, state } = await startTestServer(t);
   state.agentHistory = [{ role: "user", content: "stale turn" }];
   state.elements = [{ type: "text", id: "stale", x: 0, y: 0, text: "stale" }];
   state.latestScreenshot = "data:image/png;base64,old";
 
-  const res = await startPreso(url, SAMPLE_PRESO);
+  const res = await goLive(url, SAMPLE_GO_LIVE_BODY);
 
   assert.equal(res.status, 200);
   const body = await res.json();
@@ -60,7 +60,7 @@ test("POST /api/preso/start flips to live, primes agentHistory, blanks the live 
   );
 });
 
-test("POST /api/preso/start broadcasts mode change and fresh whiteboard", async (t) => {
+test("POST /api/live/start broadcasts mode change and fresh whiteboard", async (t) => {
   const { url } = await startTestServer(t);
   const ws = new WebSocket(wsUrl(url));
   // The snapshot a client gets on connect ends with transcription:status.
@@ -68,16 +68,16 @@ test("POST /api/preso/start broadcasts mode change and fresh whiteboard", async 
   const modeMsg = waitForMessage(ws, (m) => m.type === "mode");
   const update = waitForMessage(ws, (m) => m.type === "whiteboard:update");
 
-  const res = await startPreso(url, SAMPLE_PRESO);
+  const res = await goLive(url, SAMPLE_GO_LIVE_BODY);
   assert.equal(res.status, 200);
 
   assert.equal((await modeMsg).mode, "live");
   assert.deepEqual((await update).elements, []);
 });
 
-test("POST /api/preso/start pushes staging keyword vocabulary to the transcription provider", async (t) => {
+test("POST /api/live/start pushes staging keyword vocabulary to the transcription provider", async (t) => {
   const { url, transcription } = await startTestServer(t);
-  const res = await startPreso(url, {
+  const res = await goLive(url, {
     stagingElements: [
       { type: "text", id: "t1", text: "Schema registry" },
       { type: "rectangle", id: "r1", label: { text: "Kafka consumer group" } },
@@ -87,7 +87,7 @@ test("POST /api/preso/start pushes staging keyword vocabulary to the transcripti
   });
   assert.equal(res.status, 200);
 
-  assert.equal(transcription.sessionContextCalls.length, 1, "expected one setSessionContext call on preso start");
+  assert.equal(transcription.sessionContextCalls.length, 1, "expected one setSessionContext call on Go Live");
   const { keywords } = transcription.sessionContextCalls[0];
   assert.ok(Array.isArray(keywords));
   assert.ok(keywords.includes("Schema registry"));
@@ -124,7 +124,7 @@ test("settings reload reapplies staging keyword vocabulary to the new transcript
     return instance;
   };
   const { url } = await startTestServer(t, { settingsStore, createTranscription });
-  const startRes = await startPreso(url, {
+  const startRes = await goLive(url, {
     stagingElements: [{ type: "text", id: "t1", text: "Schema registry" }],
     stagingScreenshot: SAMPLE_SCREENSHOT,
   });
@@ -149,28 +149,28 @@ test("settings reload reapplies staging keyword vocabulary to the new transcript
   assert.deepEqual(instances[1].sessionContextCalls.at(-1), { keywords: ["Schema registry"] });
 });
 
-test("POST /api/preso/back-to-staging clears any previously pushed transcription vocabulary", async (t) => {
+test("POST /api/live/back-to-staging clears any previously pushed transcription vocabulary", async (t) => {
   const { url, transcription } = await startTestServer(t);
-  await startPreso(url, {
+  await goLive(url, {
     stagingElements: [{ type: "text", id: "t1", text: "Kafka consumer group" }],
     stagingScreenshot: SAMPLE_SCREENSHOT,
   });
   transcription.sessionContextCalls.length = 0;
 
-  const res = await fetch(`${url}/api/preso/back-to-staging`, { method: "POST" });
+  const res = await fetch(`${url}/api/live/back-to-staging`, { method: "POST" });
   assert.equal(res.status, 200);
 
   assert.equal(transcription.sessionContextCalls.length, 1, "expected one clearing setSessionContext call");
   assert.deepEqual(transcription.sessionContextCalls[0], { keywords: [] });
 });
 
-test("POST /api/preso/back-to-staging flips mode without clearing history", async (t) => {
+test("POST /api/live/back-to-staging flips mode without clearing history", async (t) => {
   const { url, state } = await startTestServer(t);
-  await startPreso(url, SAMPLE_PRESO);
+  await goLive(url, SAMPLE_GO_LIVE_BODY);
   assert.equal(state.mode, "live");
   const historyBefore = state.agentHistory;
 
-  const res = await fetch(`${url}/api/preso/back-to-staging`, { method: "POST" });
+  const res = await fetch(`${url}/api/live/back-to-staging`, { method: "POST" });
   assert.equal(res.status, 200);
 
   assert.equal(state.mode, "staging");
@@ -187,11 +187,11 @@ test("audio frames received in staging mode are not forwarded to transcription",
   assert.equal(transcription.audioCalls.length, 0, "audio should be dropped while in staging mode");
 });
 
-test("audio frames are forwarded to transcription after Start preso", async (t) => {
+test("audio frames are forwarded to transcription after Go Live", async (t) => {
   const { url, transcription } = await startTestServer(t);
   const ws = await openWs(url);
 
-  await startPreso(url, SAMPLE_PRESO);
+  await goLive(url, SAMPLE_GO_LIVE_BODY);
 
   ws.send(JSON.stringify({ type: "audio", audio: "BBBB" }));
   await wsBarrier(ws);
@@ -204,7 +204,7 @@ test("late audio frames from a stopped listening session are ignored", async (t)
   const { url, transcription } = await startTestServer(t);
   const ws = await openWs(url);
 
-  await startPreso(url, SAMPLE_PRESO);
+  await goLive(url, SAMPLE_GO_LIVE_BODY);
 
   ws.send(JSON.stringify({ type: "audio:start", sessionId: "session-1" }));
   ws.send(JSON.stringify({ type: "audio", sessionId: "session-1", audio: "BBBB" }));
@@ -229,9 +229,9 @@ test("transcript queued in staging mode does not invoke the agent", async (t) =>
   assert.equal(agentInvocations.length, 0, "agent should not run while in staging mode");
 });
 
-test("repeat Start preso calls cleanly replace the primer", async (t) => {
+test("repeat Go Live calls cleanly replace the primer", async (t) => {
   const { url, state } = await startTestServer(t);
-  await startPreso(url, SAMPLE_PRESO);
+  await goLive(url, SAMPLE_GO_LIVE_BODY);
   await state.warmupPromise;
   assert.equal(state.agentHistory.length, 3, "primer + warmup priming pair");
 
@@ -239,7 +239,7 @@ test("repeat Start preso calls cleanly replace the primer", async (t) => {
   const secondElements = [
     { type: "text", id: "ref-2", x: 0, y: 0, text: "Updated reference content here" },
   ];
-  await startPreso(url, { stagingElements: secondElements, stagingScreenshot: secondScreenshot });
+  await goLive(url, { stagingElements: secondElements, stagingScreenshot: secondScreenshot });
   await state.warmupPromise;
 
   assert.equal(state.agentHistory.length, 3, "primer reset + new warmup priming pair");
@@ -273,7 +273,7 @@ test("warmup loop retries until cache is hit, then stops", async (t) => {
       };
     },
   });
-  await startPreso(url, SAMPLE_PRESO);
+  await goLive(url, SAMPLE_GO_LIVE_BODY);
   await state.warmupPromise;
 
   assert.equal(calls.length, 3, "ran 3 attempts: misses on 1+2, hit on 3");
@@ -300,13 +300,13 @@ test("warmup loop transitions to exhausted after maxAttempts without a cache hit
       };
     },
   });
-  await startPreso(url, SAMPLE_PRESO);
+  await goLive(url, SAMPLE_GO_LIVE_BODY);
   await state.warmupPromise;
   assert.equal(calls, 3);
   assert.equal(state.warmupState.state, "exhausted");
 });
 
-test("POST /api/preso/warmup/cancel short-circuits the loop", async (t) => {
+test("POST /api/live/warmup/cancel short-circuits the loop", async (t) => {
   let calls = 0;
   let resolveStarted = (..._args) => {};
   const started = new Promise((r) => { resolveStarted = r; });
@@ -326,10 +326,10 @@ test("POST /api/preso/warmup/cancel short-circuits the loop", async (t) => {
       };
     },
   });
-  await startPreso(url, SAMPLE_PRESO);
+  await goLive(url, SAMPLE_GO_LIVE_BODY);
   // Cancel while attempt 1 is still in-flight.
   await withTimeout(started, "the first warmup attempt");
-  const res = await fetch(`${url}/api/preso/warmup/cancel`, { method: "POST" });
+  const res = await fetch(`${url}/api/live/warmup/cancel`, { method: "POST" });
   assert.equal(res.status, 200);
   resolveBlock();
   await state.warmupPromise;
@@ -337,7 +337,7 @@ test("POST /api/preso/warmup/cancel short-circuits the loop", async (t) => {
   assert.equal(state.warmupState.state, "cancelled");
 });
 
-test("Start preso fires a warmup call shaped like a real transcript turn", async (t) => {
+test("Go Live fires a warmup call shaped like a real transcript turn", async (t) => {
   const calls = [];
   const { url, state } = await startTestServer(t, {
     generateTextFn: async (opts) => {
@@ -345,7 +345,7 @@ test("Start preso fires a warmup call shaped like a real transcript turn", async
       return { text: "UNDERSTOOD", finishReason: "stop" };
     },
   });
-  await startPreso(url, SAMPLE_PRESO);
+  await goLive(url, SAMPLE_GO_LIVE_BODY);
   await state.warmupPromise;
 
   assert.equal(calls.length, 1, "expected exactly one warmup call");
@@ -376,7 +376,7 @@ test("transcripts queued during warmup wait for warmup to finish, then run", asy
       return { text: "UNDERSTOOD", finishReason: "stop" };
     },
   });
-  await startPreso(url, SAMPLE_PRESO);
+  await goLive(url, SAMPLE_GO_LIVE_BODY);
 
   // Queue a transcript before warmup resolves. Nothing between the queue and
   // the model waits on I/O here, so one macrotask gives a turn that skipped
@@ -409,7 +409,7 @@ test("multiple transcripts queued during warmup run only after the warmup call",
       return { text: "UNDERSTOOD", finishReason: "stop" };
     },
   });
-  await startPreso(url, SAMPLE_PRESO);
+  await goLive(url, SAMPLE_GO_LIVE_BODY);
 
   state.queueTranscript("first chunk");
   state.queueTranscript("second chunk");
@@ -437,7 +437,7 @@ test("warmup broadcasts agent:status thinking while running, idle when done", as
   const ws = await openWs(url);
 
   const thinking = waitForMessage(ws, (m) => m.type === "agent:status" && m.status === "thinking");
-  await startPreso(url, SAMPLE_PRESO);
+  await goLive(url, SAMPLE_GO_LIVE_BODY);
   await thinking;
 
   const idleAfterThinking = waitForMessage(ws, (m) => m.type === "agent:status" && m.status === "idle");
@@ -450,7 +450,7 @@ test("whiteboard:user-elements WS messages update state.elements in live mode", 
   const ws = await openWs(url);
 
   // Drop staging mode by going live first.
-  await startPreso(url, { stagingElements: SAMPLE_STAGING_ELEMENTS });
+  await goLive(url, { stagingElements: SAMPLE_STAGING_ELEMENTS });
   assert.equal(state.mode, "live");
   assert.deepEqual(state.elements, []);
 
@@ -477,9 +477,9 @@ test("whiteboard:user-elements is ignored in staging mode", async (t) => {
   assert.equal(state.elements, before, "staging mode must not accept live-canvas pushes");
 });
 
-test("POST /api/preso/start rejects payload missing required fields", async (t) => {
+test("POST /api/live/start rejects payload missing required fields", async (t) => {
   const { url } = await startTestServer(t);
-  const res = await startPreso(url, {});
+  const res = await goLive(url, {});
   assert.equal(res.status, 400);
 });
 
@@ -510,7 +510,7 @@ function makeSettingsStore(seed = {}) {
   };
 }
 
-test("agent instructions snapshot at preso start are folded into system prompt for warmup", async (t) => {
+test("agent instructions snapshot at Go Live are folded into system prompt for warmup", async (t) => {
   const calls = [];
   const settingsStore = makeSettingsStore({
     agentInstructions: "Use a Lewis Carroll quill, never use the colour red.",
@@ -522,7 +522,7 @@ test("agent instructions snapshot at preso start are folded into system prompt f
       return { text: "UNDERSTOOD", finishReason: "stop" };
     },
   });
-  await startPreso(url, SAMPLE_PRESO);
+  await goLive(url, SAMPLE_GO_LIVE_BODY);
   await state.warmupPromise;
   assert.equal(calls.length, 1, "expected one warmup call");
   assert.match(
@@ -532,10 +532,10 @@ test("agent instructions snapshot at preso start are folded into system prompt f
   );
 });
 
-test("POST /api/preso/start rejects oversized saved agent instructions", async (t) => {
+test("POST /api/live/start rejects oversized saved agent instructions", async (t) => {
   const settingsStore = makeSettingsStore({ agentInstructions: "x".repeat(MAX_AGENT_INSTRUCTIONS_CHARS + 1) });
   const { url } = await startTestServer(t, { settingsStore });
-  const res = await startPreso(url, SAMPLE_PRESO);
+  const res = await goLive(url, SAMPLE_GO_LIVE_BODY);
   const body = await res.json();
   assert.equal(res.status, 400);
   assert.match(body.error, /Agent instructions must be 100000 characters or fewer\./);
@@ -553,7 +553,7 @@ test("agent instructions are included in real-turn system prompt and stay stable
       return { text: "DONE", finishReason: "stop" };
     },
   });
-  await startPreso(url, SAMPLE_PRESO);
+  await goLive(url, SAMPLE_GO_LIVE_BODY);
   await state.warmupPromise;
 
   state.queueTranscript("hello world from the speaker");
@@ -571,7 +571,7 @@ test("agent instructions are included in real-turn system prompt and stay stable
   assert.equal(warmupCalls[0].system, realCalls[0].system, "system prompt must match between warmup and real turn");
 });
 
-test("agent instructions changed mid-preso do NOT affect the running preso (cache stability)", async (t) => {
+test("agent instructions changed while live do NOT affect the running session (cache stability)", async (t) => {
   const calls = [];
   const settingsStore = makeSettingsStore({ agentInstructions: "ORIGINAL_INSTRUCTIONS" });
   const { url, state } = await startTestServer(t, {
@@ -581,11 +581,11 @@ test("agent instructions changed mid-preso do NOT affect the running preso (cach
       return { text: "DONE", finishReason: "stop" };
     },
   });
-  await startPreso(url, SAMPLE_PRESO);
+  await goLive(url, SAMPLE_GO_LIVE_BODY);
   await state.warmupPromise;
 
   // User edits instructions while live. Per design, the snapshot taken at
-  // /api/preso/start wins for the duration of the preso so the cached prefix
+  // /api/live/start wins for the whole live session so the cached prefix
   // doesn't get invalidated mid-stream.
   await settingsStore.save({ agentInstructions: "CHANGED_INSTRUCTIONS" });
 
@@ -608,7 +608,7 @@ test("empty agentInstructions adds nothing to the system prompt", async (t) => {
       return { text: "UNDERSTOOD", finishReason: "stop" };
     },
   });
-  await startPreso(url, SAMPLE_PRESO);
+  await goLive(url, SAMPLE_GO_LIVE_BODY);
   await state.warmupPromise;
   assert.ok(calls.length >= 1);
   // No "User instructions" header should appear when the field is blank.

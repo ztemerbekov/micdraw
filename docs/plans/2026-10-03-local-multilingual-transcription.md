@@ -1146,7 +1146,7 @@ git commit -m "feat(ui): choose the transcription language and local model"
 
 - [ ] **Step 1: Docs.** README: a "Local transcription" section with the language/platform default table, the model list with sizes, licenses and sources (Kroko CC-BY-SA attribution, Vosk Apache-2.0), and the models directory; update "Defaults on first run" (local instead of Moonshine). AGENTS.md: one invariant line pointing at `src/local-models.js` and `resolveTranscriptionEngine`, and that a catalog change updates revision, sizes and SHA-256 together. CHANGELOG: an Unreleased line.
 
-- [ ] **Step 2: End-to-end check.** Start the server with a temporary `HOME` and settings `{ transcription: { provider: "local", language: "ru" } }`, connect a WebSocket from the app's own origin, start a preso, and stream a Russian 24 kHz recording in real time as `audio` messages. Expected: a download of 28.6 MB, then `transcript:partial` messages while audio flows and at least one `transcript:committed`.
+- [ ] **Step 2: End-to-end check.** Start the server with a temporary `HOME` and settings `{ transcription: { provider: "local", language: "ru" } }`, connect a WebSocket from the app's own origin, go live, and stream a Russian 24 kHz recording in real time as `audio` messages. Expected: a download of 28.6 MB, then `transcript:partial` messages while audio flows and at least one `transcript:committed`.
 
 - [ ] **Step 3: Full verification.** `npm run typecheck && npm test`.
 

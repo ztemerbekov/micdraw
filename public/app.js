@@ -45,7 +45,7 @@ const XAI_MODEL_PLACEHOLDER = "e.g. grok-4.3";
 const XAI_TRANSCRIPTION_MODEL = "grok-voice-transcribe-2.0";
 const MIC_STORAGE_KEY = "micdraw.mic";
 const PANEL_HIDDEN_STORAGE_KEY = "micdraw.panelHidden";
-// The live board recenters while it is this small: Start preso and Reset
+// The live board recenters while it is this small: Go Live and Reset
 // session clear it, so its first elements land in view.
 const RECENTER_MAX_ELEMENTS = 4;
 
@@ -95,7 +95,7 @@ function App() {
   const [mode, setMode] = React.useState("staging");
   const [listening, setListening] = React.useState(false);
   const [starting, setStarting] = React.useState(false);
-  const [presoStarting, setPresoStarting] = React.useState(false);
+  const [goingLive, setGoingLive] = React.useState(false);
   const [agentStatus, setAgentStatus] = React.useState("idle");
   const [transcriptionEngine, setTranscriptionEngine] =
     React.useState("loading");
@@ -433,15 +433,15 @@ function App() {
     else startListening();
   }
 
-  async function startPreso() {
-    if (presoStarting) return;
+  async function goLive() {
+    if (goingLive) return;
     const excalidrawAPI = apiRef.current;
     if (!excalidrawAPI) {
       setError("Canvas isn't ready yet.");
       return;
     }
     setError("");
-    setPresoStarting(true);
+    setGoingLive(true);
     try {
       await flushAgentInstructionsSave();
       // Snapshot what the user has on the staging canvas right now.
@@ -469,7 +469,7 @@ function App() {
         );
       }
 
-      const res = await fetch("/api/preso/start", {
+      const res = await fetch("/api/live/start", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -479,13 +479,13 @@ function App() {
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || `Start preso failed (${res.status})`);
+        throw new Error(body.error || `Go Live failed (${res.status})`);
       }
       // Server broadcasts mode=live and whiteboard:update; the WS handler swaps the canvas.
     } catch (err) {
       setError(err.message);
     } finally {
-      setPresoStarting(false);
+      setGoingLive(false);
     }
   }
 
@@ -493,7 +493,7 @@ function App() {
     setError("");
     if (listening) await stopListening();
     try {
-      const res = await fetch("/api/preso/back-to-staging", { method: "POST" });
+      const res = await fetch("/api/live/back-to-staging", { method: "POST" });
       if (!res.ok) throw new Error(`Back to staging failed (${res.status})`);
       // Server broadcasts mode=staging; the WS handler restores the staged scene.
     } catch (err) {
@@ -785,7 +785,7 @@ function App() {
                 onClick: () => {
                   if (mode !== "staging") backToStaging();
                 },
-                disabled: presoStarting,
+                disabled: goingLive,
                 title: "Staging mode",
                 "aria-pressed": mode === "staging",
               },
@@ -797,13 +797,13 @@ function App() {
                 type: "button",
                 className: `mode-toggle-option ${mode === "live" ? "active" : ""}`,
                 onClick: () => {
-                  if (mode !== "live") startPreso();
+                  if (mode !== "live") goLive();
                 },
-                disabled: presoStarting,
-                title: presoStarting ? "Starting..." : "Preso mode",
+                disabled: goingLive,
+                title: goingLive ? "Starting..." : "Live mode",
                 "aria-pressed": mode === "live",
               },
-              presoStarting && mode === "staging" ? "..." : "Preso",
+              goingLive && mode === "staging" ? "..." : "Live",
             ),
           ),
         ),
@@ -811,7 +811,7 @@ function App() {
           "p",
           null,
           mode === "staging"
-            ? "Drop keywords, diagrams, or images on the canvas. They will be used as reference during the preso."
+            ? "Drop keywords, diagrams, or images on the canvas. They will be used as reference while you talk."
             : "Just talk through your ideas. Let the agent whiteboard for you.",
         ),
       ),
@@ -822,11 +822,11 @@ function App() {
           ? React.createElement(
               "button",
               {
-                className: "start-preso",
-                onClick: startPreso,
-                disabled: presoStarting,
+                className: "go-live",
+                onClick: goLive,
+                disabled: goingLive,
               },
-              presoStarting ? "Starting..." : "Start Preso →",
+              goingLive ? "Starting..." : "Go Live →",
             )
           : null,
         isLive
@@ -1004,7 +1004,7 @@ function App() {
             React.createElement(
               "p",
               { className: "agent-instructions-hint" },
-              "Saved automatically. Takes effect on next Start Preso.",
+              "Saved automatically. Takes effect on next Go Live.",
             ),
           )
         : null,

@@ -40,9 +40,9 @@ test("frontend pushes user-drawn live elements to the server", () => {
   assert.match(appSource, /handleExcalidrawChange/);
 });
 
-test("frontend flushes pending agent instructions before starting preso", () => {
+test("frontend flushes pending agent instructions before going live", () => {
   assert.match(appSource, /async function flushAgentInstructionsSave\(\)/);
-  assert.match(appSource, /async function startPreso\(\)[\s\S]*await flushAgentInstructionsSave\(\)[\s\S]*fetch\("\/api\/preso\/start"/);
+  assert.match(appSource, /async function goLive\(\)[\s\S]*await flushAgentInstructionsSave\(\)[\s\S]*fetch\("\/api\/live\/start"/);
 });
 
 test("frontend handles viewport commands from the agent", () => {
