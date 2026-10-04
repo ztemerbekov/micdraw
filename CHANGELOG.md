@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.3 (2026-10-04)
 
 - The OpenAI API key field in the agent and voice settings no longer disappears after the first typed character when no key is saved yet.
 - Losing the connection to the server turns the microphone off. Before, audio kept streaming into the closed connection while the page showed listening as stopped.
