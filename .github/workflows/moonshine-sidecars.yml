@@ -62,7 +62,7 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
       # Each artifact holds moonshine-darwin-<arch>/bin/micdraw-moonshine.
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           pattern: moonshine-sidecar-*
           merge-multiple: true
